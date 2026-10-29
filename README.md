@@ -6,6 +6,9 @@ Ketten auf: hacken → Daten speichern → im Darknet verkaufen → aufrüsten.
 
 TypeScript + HTML5 Canvas + Vite, komplett clientseitig, Spielstand in `localStorage`.
 
+**Sofort spielen:** `npm run build` erzeugt eine einzige Datei `dist/index.html` (JS und CSS
+eingebettet), die per Doppelklick im Browser läuft – kein Server nötig.
+
 ## Starten
 
 ```bash
