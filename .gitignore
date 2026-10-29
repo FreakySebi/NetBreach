@@ -1,4 +1,70 @@
-node_modules
-dist
+# --- Abhängigkeiten & Build ---
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+coverage/
+
+# --- Logs ---
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Archive ---
 *.zip
+*.tar.gz
+*.7z
+*.rar
+
+# --- Sensible Daten: Umgebungsvariablen ---
+.env
+.env.*
+!.env.example
+*.env
+
+# --- Sensible Daten: Schlüssel & Zertifikate ---
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+*.gpg
+*.asc
+
+# --- Sensible Daten: Zugangsdaten & Tokens ---
+secrets/
+secrets.*
+*.secret
+*.secrets
+credentials.json
+*credentials*.json
+service-account*.json
+auth.json
+.npmrc
+.netrc
+.htpasswd
+
+# --- Exportierte Spielstände (können persönliche Daten enthalten) ---
+saves/
+*.save
+*.sav
+netbreach-save*.txt
+
+# --- Editor & Betriebssystem ---
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
