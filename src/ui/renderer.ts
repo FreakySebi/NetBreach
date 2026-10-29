@@ -59,7 +59,13 @@ export class Renderer {
 
     for (const c of this.game.state.connections) this.drawConnection(c, dt);
     if (this.ui.cableDrag) this.drawCableDrag();
-    for (const n of this.game.state.nodes) this.drawNode(n);
+    const [vx0, vy0] = this.camera.screenToWorld(0, 0);
+    const [vx1, vy1] = this.camera.screenToWorld(this.camera.width, this.camera.height);
+    for (const n of this.game.state.nodes) {
+      const lay = layoutOf(n.type);
+      if (n.x > vx1 || n.y > vy1 || n.x + lay.w < vx0 || n.y + lay.h < vy0) continue;
+      this.drawNode(n);
+    }
     this.drawFloating(dt);
     ctx.restore();
 

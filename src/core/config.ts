@@ -116,6 +116,8 @@ export const CONFIG = {
     maxSteps: 20000,
     /** Bei false bleibt der Trace offline unter 100 % (keine Razzia im Schlaf). */
     allowRaids: false,
+    /** Offline starten Scripts ab diesem Trace keine neuen Hacks (Sicherheitsabschaltung). */
+    scriptTraceLimit: 90,
   },
 
   prestige: {

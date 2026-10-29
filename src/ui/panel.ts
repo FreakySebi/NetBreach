@@ -171,14 +171,12 @@ export class Panel {
     const name = (id: string) => CONFIG.research.find((x) => x.id === id)?.name ?? id;
     const blocks = [...tiers.entries()]
       .sort((a, b) => a[0] - b[0])
-      .map(([tier, list]) => {
+      .map(([tier, all]) => {
+        const list = all.filter((r) => this.game.researchState(r) !== 'done');
+        if (!list.length) return '';
         const cards = list.map((r) => {
           const st = this.game.researchState(r);
           const unlocks = r.unlocks?.length ? `<div class="unlocks">▸ ${r.unlocks.map((u) => esc(nodeConfig(u).name)).join(', ')}</div>` : '';
-          if (st === 'done') {
-            return `<div class="card done" style="--accent:#39ff88"><div class="card-head"><span>✓ ${esc(r.name)}</span></div>
-              <div class="card-desc">${esc(r.desc)}</div></div>`;
-          }
           if (st === 'locked') {
             const missing = r.requires.filter((q) => !s.research.includes(q)).map(name);
             return `<div class="card locked"><div class="card-head"><span>🔒 ${esc(r.name)}</span></div>
@@ -190,8 +188,11 @@ export class Panel {
         });
         return `<h4>Stufe ${tier + 1}</h4>${cards.join('')}`;
       });
-    const done = s.research.length;
-    return `<h3>Forschung (${done}/${CONFIG.research.length})</h3><p class="hint">Schaltet neue Nodes und globale Boni frei.</p>${blocks.join('')}`;
+    const done = CONFIG.research.filter((r) => s.research.includes(r.id));
+    const doneHtml = done.length
+      ? `<h4>Abgeschlossen</h4><div class="done-list">${done.map((r) => `<span title="${esc(r.desc)}">✓ ${esc(r.name)}</span>`).join('')}</div>`
+      : '';
+    return `<h3>Forschung (${done.length}/${CONFIG.research.length})</h3><p class="hint">Schaltet neue Nodes und globale Boni frei.</p>${blocks.join('')}${doneHtml}`;
   }
 
   private identityVisible(): boolean {

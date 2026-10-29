@@ -54,8 +54,14 @@ export class Inspector {
     parts.push(this.statsBlock(node));
 
     if (def.ports.length) {
-      parts.push(`<div class="ports">${def.ports
-        .map((p) => `<span style="color:${PORT_COLORS[p.kind]}">${p.dir === 'in' ? '◀' : '▶'} ${esc(p.label)} <small>(${PORT_NAMES[p.kind]})</small></span>`)
+      const conns = this.game.state.connections;
+      parts.push(`<h4>Anschlüsse</h4><div class="ports">${def.ports
+        .map((p) => {
+          const n = conns.filter((c) => (p.dir === 'in' ? c.to === node.id && c.toPort === p.id : c.from === node.id && c.fromPort === p.id)).length;
+          const cap = this.game.portCapacity(node, p.id);
+          const capText = cap === Infinity ? '' : '/' + cap;
+          return `<span class="${n ? 'on' : 'off'}" style="color:${PORT_COLORS[p.kind]}" title="${PORT_NAMES[p.kind]}">${p.dir === 'in' ? '◀ Ein' : '▶ Aus'}: ${esc(p.label)} <small>${n}${capText}</small></span>`;
+        })
         .join('')}</div>`);
     }
 

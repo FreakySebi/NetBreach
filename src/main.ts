@@ -250,6 +250,17 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+$('btn-zoom-in').onclick = () => camera.zoomAt(camera.width / 2, camera.height / 2, 1.25);
+$('btn-zoom-out').onclick = () => camera.zoomAt(camera.width / 2, camera.height / 2, 0.8);
+$('btn-center').onclick = () => {
+  const ns = game.state.nodes;
+  const xs = ns.map((n) => n.x);
+  const ys = ns.map((n) => n.y);
+  const x1 = Math.max(...ns.map((n) => n.x + layoutOf(n.type).w));
+  const y1 = Math.max(...ns.map((n) => n.y + layoutOf(n.type).h));
+  camera.fit(Math.min(...xs), Math.min(...ys), x1, y1);
+};
+
 renderer.resize();
 if (offline) showOfflineReport(offline);
 

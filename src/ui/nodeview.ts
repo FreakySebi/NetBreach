@@ -67,15 +67,15 @@ export function describeNode(game: Game, node: NodeInstance): NodeView {
       view.lines.push({ text: `${fmt(stat(node, 'cores'))} Kerne · ${fmt(stat(node, 'clock'))} GHz · ${fmt(stat(node, 'ram'))} GB` });
       view.lines.push({ text: `Ziel: ${t ? t.name : '—'}`, color: '#00e5ff' });
       const dur = t && power > 0 ? t.security / power : Infinity;
-      view.lines.push({ text: `${fmt(power)} OPS · ${fmtTime(dur)}/Hack`, color: C_DIM });
+      const fill = node.buffer / Math.max(1, rt?.bufferCap ?? 1);
+      const bufText = fill > 0.5 ? ` · Puffer ${Math.round(fill * 100)}%` : '/Hack';
+      view.lines.push({ text: `${fmt(power)} OPS · ${fmtTime(dur)}${bufText}`, color: fill > 0.9 ? C_WARN : C_DIM });
       view.lines.push(
         problemLine(flags, alert) ?? {
           text: `${Math.round(rt?.temperature ?? 30)}°C · ${fmtBytes(rt?.bandwidth ?? 0)}/s · ${rt && rt.stealth > 0 ? 'Tarnung ' + fmtPct(rt.stealth) : 'ungetarnt'}`,
           color: C_DIM,
         },
       );
-      const fill = node.buffer / Math.max(1, rt?.bufferCap ?? 1);
-      if (fill > 0.02) view.lines[0] = { text: view.lines[0].text + ` · Puffer ${Math.round(fill * 100)}%` };
       const ok = !!t && canHack(state, node, t) && state.raidTimer <= 0;
       if (node.job) {
         const ratio = node.job.progress / node.job.required;

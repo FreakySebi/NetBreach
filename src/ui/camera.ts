@@ -31,6 +31,16 @@ export class Camera {
     this.s.y += wy - ny;
   }
 
+  /** Zoom und Position so wählen, dass das Rechteck sichtbar ist. */
+  fit(x0: number, y0: number, x1: number, y1: number, margin = 60): void {
+    const w = Math.max(1, x1 - x0);
+    const h = Math.max(1, y1 - y0);
+    const z = Math.min((this.width - margin * 2) / w, (this.height - margin * 2) / h);
+    this.s.zoom = Math.min(1.2, Math.max(MIN_ZOOM, z));
+    this.s.x = (x0 + x1) / 2;
+    this.s.y = (y0 + y1) / 2;
+  }
+
   centerOn(wx: number, wy: number): void {
     this.s.x = wx;
     this.s.y = wy;

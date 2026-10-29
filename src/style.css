@@ -505,3 +505,25 @@ button.wide {
   width: 100%;
   margin: 6px 0;
 }
+
+.done-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 10px;
+  color: var(--dim);
+}
+.ports span.off {
+  opacity: 0.55;
+}
+#view-buttons {
+  position: absolute;
+  right: 12px;
+  bottom: 28px;
+  display: flex;
+  gap: 4px;
+}
+#view-buttons button {
+  padding: 4px 9px;
+  background: rgba(8, 13, 11, 0.9);
+}

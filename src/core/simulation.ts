@@ -356,7 +356,20 @@ export function marketPrice(state: GameState, market: NodeInstance, mods: Modifi
 }
 
 /** Ein Simulationsschritt. */
-export function tick(state: GameState, runtime: RuntimeMap, dt: number, events: GameEvent[], flows: FlowMap = new Map()): void {
+export interface TickOptions {
+  /** Scripts starten ab diesem Trace keine neuen Hacks. */
+  scriptTraceLimit?: number;
+}
+
+export function tick(
+  state: GameState,
+  runtime: RuntimeMap,
+  dt: number,
+  events: GameEvent[],
+  flows: FlowMap = new Map(),
+  opts: TickOptions = {},
+): void {
+  const traceLimit = opts.scriptTraceLimit ?? Infinity;
   const mods = getModifiers(state);
   state.run.playTime += dt;
   flows.clear();
@@ -373,7 +386,7 @@ export function tick(state: GameState, runtime: RuntimeMap, dt: number, events: 
     if (!isCompute(node)) continue;
     const rt = runtime.get(node.id)!;
     if (state.raidTimer > 0) continue;
-    if (!node.job && rt.scripted) {
+    if (!node.job && rt.scripted && state.trace < traceLimit) {
       const t = targetById(node.targetId);
       if (t && !canHack(state, node, t)) rt.flags.add('ramLow');
       else startHack(state, node);
@@ -399,7 +412,7 @@ export function tick(state: GameState, runtime: RuntimeMap, dt: number, events: 
       const done = targetById(node.job.targetId)!;
       node.job = null;
       completeHack(state, node, rt, done, mods, events);
-      if (rt.scripted && state.raidTimer <= 0) startHack(state, node);
+      if (rt.scripted && state.raidTimer <= 0 && state.trace < traceLimit) startHack(state, node);
     }
   }
 
