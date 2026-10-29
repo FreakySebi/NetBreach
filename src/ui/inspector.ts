@@ -1,7 +1,7 @@
 import { CONFIG } from '../core/config';
 import type { Game } from '../core/game';
-import { fmt, fmtBytes, fmtTime } from '../core/format';
-import { canHack, hackPower, isCompute, targetUnlocked } from '../core/simulation';
+import { fmt, fmtBytes, fmtMoney, fmtPct, fmtTime } from '../core/format';
+import { canHack, hackPower, heatLoad, isCompute, isStorage, marketPrice, powerDemand, targetUnlocked } from '../core/simulation';
 import { getModifiers } from '../core/state';
 import type { NodeInstance } from '../core/types';
 import { NODE_DEFS, PORT_COLORS, PORT_NAMES } from '../nodes/definitions';
@@ -84,11 +84,39 @@ export class Inspector {
 
   private statsBlock(node: NodeInstance): string {
     const rt = this.game.runtime.get(node.id);
+    if (!rt) return '';
     const kv: [string, string][] = [];
+    const s = this.game.state;
     if (isCompute(node)) {
       kv.push(['Kerne', fmt(stat(node, 'cores'))], ['Takt', fmt(stat(node, 'clock')) + ' GHz'], ['RAM', fmt(stat(node, 'ram')) + ' GB']);
-      kv.push(['Leistung', fmt(rt?.power ?? 0) + ' OPS'], ['Temperatur', Math.round(rt?.temperature ?? 30) + ' °C']);
-      kv.push(['Bandbreite', fmtBytes(rt?.bandwidth ?? 0) + '/s'], ['Puffer', `${fmtBytes(node.buffer)} / ${fmtBytes(rt?.bufferCap ?? 0)}`]);
+      kv.push(['Leistung', fmt(rt.power) + ' OPS']);
+      if (rt.gpuBonus > 0) kv.push(['GPU-Boost', fmt(rt.gpuBonus) + ' OPS (zielabhängig)']);
+      if (rt.boost > 0) kv.push(['Script-Bonus', '+' + fmtPct(rt.boost)]);
+      kv.push(['Temperatur', `${Math.round(rt.temperature)} °C${rt.thermalRatio < 1 ? ' (gedrosselt ' + fmtPct(rt.thermalRatio) + ')' : ''}`]);
+      if (powerDemand(node) > 0) kv.push(['Strom', `${fmt(powerDemand(node))} W · ${fmtPct(rt.powerRatio)}`]);
+      kv.push(['Wärme', `${fmt(heatLoad(node))} / ${fmt(stat(node, 'coolBuiltIn'))} WE intern`]);
+      kv.push(['Bandbreite', fmtBytes(rt.bandwidth) + '/s'], ['Puffer', `${fmtBytes(node.buffer)} / ${fmtBytes(rt.bufferCap)}`]);
+      kv.push(['Tarnung', fmtPct(rt.stealth)], ['Automatik', rt.scripted ? 'Script aktiv' : 'manuell']);
+    } else if (isStorage(node)) {
+      kv.push(['Belegt', `${fmtBytes(node.buffer)} / ${fmtBytes(rt.bufferCap)}`], ['Durchsatz', fmtBytes(stat(node, 'throughput')) + '/s']);
+      kv.push(['Ausgang', fmtBytes(rt.rate) + '/s']);
+    } else if (node.type === 'market') {
+      kv.push(['Kaufrate', fmtBytes(stat(node, 'sellRate')) + '/s'], ['Preis', fmtMoney(marketPrice(s, node, getModifiers(s))) + '/MB']);
+      kv.push(['Umsatz', fmtMoney(rt.rate) + '/s']);
+    } else if (node.type === 'psu') {
+      kv.push(['Leistung', fmt(stat(node, 'capacity')) + ' W'], ['Last', fmt(rt.demand) + ' W']);
+    } else if (node.type === 'cooler') {
+      kv.push(['Kühlleistung', fmt(rt.rate) + ' WE'], ['Bedarf', fmt(rt.demand) + ' WE']);
+    } else if (node.type === 'gpu') {
+      kv.push(['GPU-OPS', fmt(rt.power)], ['Strom', fmt(powerDemand(node)) + ' W']);
+    } else if (node.type === 'router' || node.type === 'fiber') {
+      kv.push(['Bandbreite', fmtBytes(rt.rate) + '/s'], ['Rechner', String(rt.load)]);
+    } else if (node.type === 'miner') {
+      kv.push(['Krypto', fmt(rt.rate * 3600, 3) + ' ₿/h'], ['Strom', fmt(powerDemand(node)) + ' W']);
+    } else if (node.type === 'vpn' || node.type === 'proxy') {
+      kv.push(['Tarnung', fmtPct(stat(node, 'stealth'))], ['Kette', fmtPct(rt.stealth)]);
+    } else if (node.type === 'script') {
+      kv.push(['Verbindungen', `${rt.load} / ${Math.floor(stat(node, 'slots'))}`], ['Speed-Bonus', '+' + fmtPct(stat(node, 'boost'))]);
     }
     if (!kv.length) return '';
     return `<div class="kv">${kv.map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join('')}</div>`;

@@ -1,11 +1,14 @@
 import './style.css';
+import { CONFIG } from './core/config';
 import { Game } from './core/game';
-import { fmt, fmtMoney } from './core/format';
+import { fmt, fmtBytes, fmtMoney, fmtTime } from './core/format';
+import type { OfflineReport } from './core/offline';
 import { isCompute, targetById } from './core/simulation';
 import type { NodeTypeId } from './core/types';
 import { layoutOf } from './nodes/definitions';
 import { nodeConfig } from './nodes/stats';
 import { Camera } from './ui/camera';
+import { esc } from './ui/dom';
 import { Hud } from './ui/hud';
 import { Input } from './ui/input';
 import { Inspector } from './ui/inspector';
@@ -16,7 +19,7 @@ import { UIState } from './ui/uistate';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const game = new Game();
+const { game, offline } = Game.fromStorage();
 const ui = new UIState();
 const camera = new Camera(game.state.camera);
 const canvas = $<HTMLCanvasElement>('canvas');
@@ -29,13 +32,14 @@ function freeSpot(type: NodeTypeId): [number, number] {
   const lay = layoutOf(type);
   const [cx, cy] = [camera.s.x - lay.w / 2, camera.s.y - lay.h / 2];
   for (let r = 0; r < 30; r++) {
-    for (let i = 0; i < Math.max(1, r * 6); i++) {
-      const a = (i / Math.max(1, r * 6)) * Math.PI * 2;
-      const x = Math.round(cx + Math.cos(a) * r * 60);
-      const y = Math.round(cy + Math.sin(a) * r * 50);
+    const steps = Math.max(1, r * 8);
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      const x = Math.round(cx + Math.cos(a) * r * 70);
+      const y = Math.round(cy + Math.sin(a) * r * 60);
       const overlaps = game.state.nodes.some((n) => {
         const l = layoutOf(n.type);
-        return x < n.x + l.w + 30 && x + lay.w + 30 > n.x && y < n.y + l.h + 20 && y + lay.h + 20 > n.y;
+        return x < n.x + l.w + 40 && x + lay.w + 40 > n.x && y < n.y + l.h + 20 && y + lay.h + 20 > n.y;
       });
       if (!overlaps) return [x, y];
     }
@@ -43,8 +47,32 @@ function freeSpot(type: NodeTypeId): [number, number] {
   return [cx, cy];
 }
 
-function bindCamera(): void {
+/** Nach dem Austausch des States (Laden, Reset, Prestige) UI neu verknüpfen. */
+function rebind(): void {
   camera.s = game.state.camera;
+  ui.selectedNode = null;
+  ui.selectedConnection = null;
+  hud.resetRates();
+}
+
+function showOfflineReport(r: OfflineReport): void {
+  if (r.cappedSeconds < CONFIG.offline.minSeconds) return;
+  const capped = r.cappedSeconds < r.seconds ? ` (gedeckelt auf ${fmtTime(r.cappedSeconds)})` : '';
+  const nothing = r.hacks === 0 && r.money < 0.01 && r.crypto < 1e-6;
+  showModal(
+    'Willkommen zurück',
+    `Du warst ${fmtTime(r.seconds)} weg${capped}.<br><br>` +
+      (nothing
+        ? 'Deine Rechner haben in der Zeit nichts getan. Mit <b>Hack-Scripts</b> (Forschung „Automatisierung“) laufen Hacks auch offline weiter.'
+        : `<div class="kv">
+            <span>Hacks</span><b>${fmt(r.hacks)}</b>
+            <span>Geld</span><b class="c-money">+${fmtMoney(r.money)}</b>
+            <span>Daten verkauft</span><b class="c-data">${fmtBytes(r.data)}</b>
+            <span>Krypto</span><b class="c-crypto">+${fmt(r.crypto, 3)} ₿</b>
+            <span>Reputation</span><b class="c-rep">+${fmt(r.rep)}</b>
+          </div>`),
+    [{ label: 'Weiter', primary: true }],
+  );
 }
 
 const panel = new Panel($('sidepanel'), game, {
@@ -72,9 +100,7 @@ const panel = new Panel($('sidepanel'), game, {
   },
   load() {
     if (game.load()) {
-      bindCamera();
-      ui.selectedNode = null;
-      hud.resetRates();
+      rebind();
       toasts.show('Spielstand geladen', 'ok', 2000);
     } else toasts.show('Kein Spielstand gefunden', 'warn');
   },
@@ -86,10 +112,57 @@ const panel = new Panel($('sidepanel'), game, {
         primary: true,
         action: () => {
           game.hardReset();
-          bindCamera();
-          ui.selectedNode = null;
-          hud.resetRates();
+          rebind();
           toasts.show('Neues Spiel gestartet', 'info');
+        },
+      },
+    ]);
+  },
+  research(id) {
+    game.research(id);
+  },
+  prestige() {
+    const n = game.pendingTokens();
+    showModal(
+      'Neue Identität annehmen?',
+      `Du erhältst <b class="c-rep">${fmt(n)} Ghost-Tokens</b>. Geld, Krypto, Reputation, Hardware und Forschung werden zurückgesetzt.`,
+      [
+        { label: 'Abbrechen' },
+        {
+          label: 'Spuren verwischen',
+          primary: true,
+          action: () => {
+            if (game.prestige()) {
+              rebind();
+              toasts.show(`Neue Identität! +${fmt(n)} ◆`, 'ok', 5000);
+            }
+          },
+        },
+      ],
+    );
+  },
+  buyPerk(id) {
+    game.buyPerk(id);
+  },
+  exportSave() {
+    showModal(
+      'Spielstand exportieren',
+      `Kopiere diesen Text, um deinen Spielstand zu sichern:<textarea readonly onclick="this.select()">${esc(game.exportSave())}</textarea>`,
+      [{ label: 'Schließen', primary: true }],
+    );
+  },
+  importSave() {
+    showModal('Spielstand importieren', 'Füge einen exportierten Spielstand ein:<textarea id="import-text"></textarea>', [
+      { label: 'Abbrechen' },
+      {
+        label: 'Importieren',
+        primary: true,
+        action: () => {
+          const text = (document.getElementById('import-text') as HTMLTextAreaElement | null)?.value ?? '';
+          if (game.importSave(text)) {
+            rebind();
+            toasts.show('Spielstand importiert', 'ok');
+          } else toasts.show('Import fehlgeschlagen – ungültiger Text', 'bad');
         },
       },
     ]);
@@ -139,14 +212,20 @@ game.on((e) => {
       break;
     }
     case 'raid':
-      toasts.show(`RAZZIA! Verloren: ${fmtMoney(e.lostMoney)}, Daten und Krypto. Systeme offline.`, 'bad', 7000);
+      toasts.show(
+        `RAZZIA! Verloren: ${fmtMoney(e.lostMoney)}, ${fmtBytes(e.lostData)} Daten, ${fmt(e.lostCrypto, 3)} ₿. Systeme ${CONFIG.trace.raidOfflineSeconds} s offline.`,
+        'bad',
+        8000,
+      );
       break;
     case 'traceWarning':
-      toasts.show('Trace über 75 % – Razzia droht! Hacks pausieren oder VPN nutzen.', 'warn', 5000);
+      toasts.show(`Trace über ${CONFIG.trace.warnAt} % – Razzia droht! Pausieren oder VPN/Proxys nutzen.`, 'warn', 5000);
       break;
-    case 'research':
-      toasts.show('Forschung abgeschlossen', 'ok');
+    case 'research': {
+      const r = CONFIG.research.find((x) => x.id === e.id);
+      if (r) toasts.show(`Erforscht: ${r.name}`, 'ok');
       break;
+    }
     case 'info':
       toasts.show(e.text, e.tone ?? 'info');
       break;
@@ -157,20 +236,35 @@ game.on((e) => {
 
 window.addEventListener('resize', () => renderer.resize());
 window.addEventListener('beforeunload', () => game.save());
+
+// Tab im Hintergrund: requestAnimationFrame pausiert → Zeit beim Zurückkehren nachrechnen.
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    hiddenAt = Date.now();
+    game.save();
+  } else if (hiddenAt) {
+    const report = game.catchUp((Date.now() - hiddenAt) / 1000);
+    hiddenAt = 0;
+    if (report) showOfflineReport(report);
+  }
+});
+
 renderer.resize();
+if (offline) showOfflineReport(offline);
 
 let last = performance.now();
 let uiAcc = 0;
 function frame(now: number): void {
-  const dt = Math.min(0.1, (now - last) / 1000);
+  const dt = Math.min(0.25, (now - last) / 1000);
   last = now;
   ui.time += dt;
   game.update(dt);
   renderer.render(dt);
   uiAcc += dt;
   if (uiAcc >= 0.15) {
+    hud.update(uiAcc);
     uiAcc = 0;
-    hud.update(0.15);
     panel.update();
     inspector.update();
   }

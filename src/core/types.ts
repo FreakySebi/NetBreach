@@ -103,6 +103,8 @@ export interface NodeRuntime {
   bandwidth: number; // MB/s
   stealth: number; // 0..1
   gpuBonus: number;
+  /** Geschwindigkeitsbonus durch ein angeschlossenes Script (0.1 = +10 %). */
+  boost: number;
   scripted: boolean;
   bufferCap: number;
   flags: Set<NodeFlag>;

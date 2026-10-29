@@ -5,8 +5,10 @@ export interface PortDef {
   kind: PortKind;
   label: string;
   dir: 'in' | 'out';
-  /** Maximale Anzahl Kabel an diesem Port (Standard: unbegrenzt). */
+  /** Maximale Anzahl Kabel (Standard: Eingänge 1, Ausgänge unbegrenzt). */
   max?: number;
+  /** Stat des Nodes, der die maximale Kabelanzahl bestimmt. */
+  maxStat?: string;
 }
 
 export type NodeCategory = 'job' | 'compute' | 'module' | 'network' | 'storage' | 'market' | 'power' | 'security' | 'automation';
@@ -53,26 +55,44 @@ export const CATEGORY_COLORS: Record<NodeCategory, string> = {
   automation: '#ff9f40',
 };
 
-const computePorts: PortDef[] = [{ id: 'dataOut', kind: 'data', label: 'Daten', dir: 'out' }];
+const P = {
+  dataIn: { id: 'dataIn', kind: 'data', label: 'Daten', dir: 'in', max: 99 },
+  dataOut: { id: 'dataOut', kind: 'data', label: 'Daten', dir: 'out' },
+  powerIn: { id: 'powerIn', kind: 'power', label: 'Strom', dir: 'in' },
+  powerOut: { id: 'powerOut', kind: 'power', label: 'Strom', dir: 'out' },
+  coolIn: { id: 'coolIn', kind: 'cool', label: 'Kühlung', dir: 'in' },
+  coolOut: { id: 'coolOut', kind: 'cool', label: 'Kühlung', dir: 'out' },
+  netIn: { id: 'netIn', kind: 'net', label: 'Uplink', dir: 'in' },
+  netOut: { id: 'netOut', kind: 'net', label: 'Uplink', dir: 'out' },
+  accelIn: { id: 'accelIn', kind: 'accel', label: 'GPU', dir: 'in' },
+  accelOut: { id: 'accelOut', kind: 'accel', label: 'GPU', dir: 'out', max: 1 },
+  proxyIn: { id: 'proxyIn', kind: 'proxy', label: 'Proxy', dir: 'in' },
+  proxyOut: { id: 'proxyOut', kind: 'proxy', label: 'Proxy', dir: 'out', max: 1 },
+  scriptIn: { id: 'scriptIn', kind: 'script', label: 'Script', dir: 'in' },
+  scriptOut: { id: 'scriptOut', kind: 'script', label: 'Script', dir: 'out', maxStat: 'slots' },
+} satisfies Record<string, PortDef>;
+
+const laptopPorts: PortDef[] = [P.coolIn, P.netIn, P.accelIn, P.proxyIn, P.scriptIn, P.dataOut];
+const computePorts: PortDef[] = [P.powerIn, P.coolIn, P.netIn, P.accelIn, P.proxyIn, P.scriptIn, P.dataOut];
 
 export const NODE_DEFS: Record<NodeTypeId, NodeDef> = {
   job: { category: 'job', icon: '$', ports: [], lines: 2, button: 'ARBEITEN' },
-  laptop: { category: 'compute', icon: '▣', ports: computePorts, lines: 4, bar: true, button: 'HACK' },
+  laptop: { category: 'compute', icon: '▣', ports: laptopPorts, lines: 4, bar: true, button: 'HACK' },
   pc: { category: 'compute', icon: '▣', ports: computePorts, lines: 4, bar: true, button: 'HACK' },
   server: { category: 'compute', icon: '▤', ports: computePorts, lines: 4, bar: true, button: 'HACK' },
-  gpu: { category: 'module', icon: '◈', ports: [], lines: 2 },
-  router: { category: 'network', icon: '⇄', ports: [], lines: 2 },
-  fiber: { category: 'network', icon: '≋', ports: [], lines: 2 },
-  hdd: { category: 'storage', icon: '◍', ports: [], lines: 2, bar: true },
-  ssd: { category: 'storage', icon: '◍', ports: [], lines: 2, bar: true },
-  datacenter: { category: 'storage', icon: '▦', ports: [], lines: 2, bar: true },
-  market: { category: 'market', icon: '¤', ports: [], lines: 2 },
-  miner: { category: 'module', icon: '₿', ports: [], lines: 2 },
-  psu: { category: 'power', icon: 'ϟ', ports: [], lines: 2, bar: true },
-  cooler: { category: 'power', icon: '❄', ports: [], lines: 2, bar: true },
-  vpn: { category: 'security', icon: '⛨', ports: [], lines: 2 },
-  proxy: { category: 'security', icon: '⛨', ports: [], lines: 2 },
-  script: { category: 'automation', icon: '⌘', ports: [], lines: 2 },
+  gpu: { category: 'module', icon: '◈', ports: [P.powerIn, P.coolIn, P.accelOut], lines: 2 },
+  router: { category: 'network', icon: '⇄', ports: [P.netOut], lines: 2 },
+  fiber: { category: 'network', icon: '≋', ports: [P.powerIn, P.netOut], lines: 2 },
+  hdd: { category: 'storage', icon: '◍', ports: [P.dataIn, P.dataOut], lines: 2, bar: true },
+  ssd: { category: 'storage', icon: '◍', ports: [P.powerIn, P.dataIn, P.dataOut], lines: 2, bar: true },
+  datacenter: { category: 'storage', icon: '▦', ports: [P.powerIn, P.coolIn, P.dataIn, P.dataOut], lines: 2, bar: true },
+  market: { category: 'market', icon: '¤', ports: [P.dataIn], lines: 3, bar: true },
+  miner: { category: 'module', icon: '₿', ports: [P.powerIn, P.coolIn, P.accelIn], lines: 3 },
+  psu: { category: 'power', icon: 'ϟ', ports: [P.powerOut], lines: 2, bar: true },
+  cooler: { category: 'power', icon: '❄', ports: [P.powerIn, P.coolOut], lines: 2, bar: true },
+  vpn: { category: 'security', icon: '⛨', ports: [P.proxyIn, P.proxyOut], lines: 2 },
+  proxy: { category: 'security', icon: '⛨', ports: [P.proxyIn, P.proxyOut], lines: 2 },
+  script: { category: 'automation', icon: '⌘', ports: [P.scriptOut], lines: 2 },
 };
 
 // ---------- Layout ----------

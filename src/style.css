@@ -495,3 +495,13 @@ ul.help {
     margin-left: 0;
   }
 }
+
+.unlocks {
+  font-size: 10px;
+  color: var(--cyan);
+  margin-bottom: 6px;
+}
+button.wide {
+  width: 100%;
+  margin: 6px 0;
+}

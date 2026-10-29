@@ -29,8 +29,8 @@ export function showModal(title: string, bodyHtml: string, buttons: { label: str
     btn.textContent = b.label;
     if (b.primary) btn.classList.add('primary');
     btn.onclick = () => {
-      back.remove();
       b.action?.();
+      back.remove();
     };
     bar.appendChild(btn);
   }

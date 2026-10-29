@@ -1,8 +1,9 @@
-import { CONFIG } from './config';
+import { CONFIG, type PerkConfig, type ResearchConfig } from './config';
 import { canAfford, pay, refund } from './economy';
-import { loadFromStorage, saveToStorage, clearStorage } from './save';
-import { createInitialState, getModifiers } from './state';
-import { computeRuntime, startHack, targetById, tick, type RuntimeMap } from './simulation';
+import { simulateOffline, type OfflineReport } from './offline';
+import { clearStorage, deserialize, loadFromStorage, saveToStorage, serialize } from './save';
+import { createInitialState, getModifiers, pendingTokens, perkLevel, prestigeReset } from './state';
+import { computeRuntime, isCompute, startHack, targetById, tick, type FlowMap, type RuntimeMap } from './simulation';
 import type { GameEvent, GameState, NodeInstance, NodeTypeId } from './types';
 import { NODE_DEFS, PORT_NAMES, portDef } from '../nodes/definitions';
 import { countOf, hasConfig, investedValue, nodeConfig, nodePrice, stat, upgradeCost, upgradeMaxed } from '../nodes/stats';
@@ -13,14 +14,31 @@ export class Game {
   state: GameState;
   runtime: RuntimeMap = new Map();
   /** Fluss pro Verbindung im letzten Tick (Einheiten/s) – für die Paket-Animation. */
-  flows = new Map<number, number>();
+  flows: FlowMap = new Map();
   private listeners: Listener[] = [];
   private accumulator = 0;
   private sinceSave = 0;
 
   constructor(state?: GameState) {
-    this.state = state ?? loadFromStorage() ?? createInitialState();
+    this.state = state ?? createInitialState();
     computeRuntime(this.state, this.runtime);
+  }
+
+  /** Lädt den gespeicherten Stand und rechnet die Offline-Zeit nach. */
+  static fromStorage(): { game: Game; offline: OfflineReport | null } {
+    const saved = loadFromStorage();
+    const game = new Game(saved ?? undefined);
+    let offline: OfflineReport | null = null;
+    if (saved) offline = game.catchUp((Date.now() - saved.savedAt) / 1000);
+    return { game, offline };
+  }
+
+  /** Verstrichene Zeit nachsimulieren (Offline-Fortschritt / Tab im Hintergrund). */
+  catchUp(seconds: number): OfflineReport | null {
+    if (!(seconds > 1)) return null;
+    const report = simulateOffline(this.state, this.runtime, seconds);
+    computeRuntime(this.state, this.runtime);
+    return report;
   }
 
   on(fn: Listener): void {
@@ -37,18 +55,33 @@ export class Game {
     this.accumulator += Math.min(realDt, 1);
     const events: GameEvent[] = [];
     while (this.accumulator >= step) {
-      tick(this.state, this.runtime, step, events);
+      tick(this.state, this.runtime, step, events, this.flows);
       this.accumulator -= step;
     }
     for (const e of events) this.emit(e);
     this.sinceSave += realDt;
-    if (this.sinceSave >= CONFIG.autosaveSeconds) {
-      this.save();
-    }
+    if (this.sinceSave >= CONFIG.autosaveSeconds) this.save();
   }
 
   node(id: number): NodeInstance | undefined {
     return this.state.nodes.find((n) => n.id === id);
+  }
+
+  // ---------- Freischaltungen ----------
+
+  isUnlocked(type: NodeTypeId): boolean {
+    if (!hasConfig(type)) return false;
+    if (nodeConfig(type).startUnlocked) return true;
+    return CONFIG.research.some((r) => r.unlocks?.includes(type) && this.state.research.includes(r.id));
+  }
+
+  lockHint(type: NodeTypeId): string {
+    const r = CONFIG.research.find((x) => x.unlocks?.includes(type));
+    return r ? `Forschung „${r.name}“ nötig.` : 'Noch nicht verfügbar.';
+  }
+
+  count(type: NodeTypeId): number {
+    return countOf(this.state, type);
   }
 
   // ---------- Aktionen ----------
@@ -64,26 +97,21 @@ export class Game {
     this.emit({ kind: 'click', amount });
   }
 
-  isUnlocked(type: NodeTypeId): boolean {
-    return hasConfig(type) && (nodeConfig(type).startUnlocked === true);
-  }
-
-  lockHint(_type: NodeTypeId): string {
-    return 'Noch nicht verfügbar.';
-  }
-
-  count(type: NodeTypeId): number {
-    return countOf(this.state, type);
-  }
-
   buyNode(type: NodeTypeId, x: number, y: number): NodeInstance | null {
     if (!this.isUnlocked(type) || type === 'job') return null;
     if (!pay(this.state, nodePrice(this.state, type))) return null;
     const node: NodeInstance = { id: this.state.nextId++, type, x, y, levels: {}, buffer: 0 };
-    if (NODE_DEFS[type].category === 'compute') node.targetId = CONFIG.targets[0].id;
+    if (NODE_DEFS[type].category === 'compute') node.targetId = this.bestTargetFor(node) ?? CONFIG.targets[0].id;
     this.state.nodes.push(node);
     computeRuntime(this.state, this.runtime);
     return node;
+  }
+
+  /** Schwierigstes Ziel, das ein Rechner gerade hacken kann. */
+  bestTargetFor(node: NodeInstance): string | undefined {
+    const ram = stat(node, 'ram');
+    const ok = CONFIG.targets.filter((t) => this.state.reputation >= t.reqRep && ram >= t.ram);
+    return ok[ok.length - 1]?.id;
   }
 
   sellNode(nodeId: number): boolean {
@@ -114,14 +142,23 @@ export class Game {
 
   setTarget(nodeId: number, targetId: string): void {
     const node = this.node(nodeId);
-    if (!node || !targetById(targetId)) return;
+    if (!node || !isCompute(node) || !targetById(targetId)) return;
     node.targetId = targetId;
     if (node.job && node.job.targetId !== targetId) node.job = null;
+    computeRuntime(this.state, this.runtime);
   }
 
   startHack(nodeId: number): boolean {
     const node = this.node(nodeId);
     return !!node && startHack(this.state, node);
+  }
+
+  /** Maximale Kabelanzahl an einem Port. */
+  portCapacity(node: NodeInstance, portId: string): number {
+    const p = portDef(node.type, portId);
+    if (!p) return 0;
+    if (p.maxStat) return Math.floor(stat(node, p.maxStat));
+    return p.max ?? (p.dir === 'in' ? 1 : Infinity);
   }
 
   /** Verbindet einen Ausgang mit einem Eingang gleicher Art. */
@@ -133,30 +170,54 @@ export class Game {
     const pb = portDef(b.type, toPort);
     if (!pa || !pb || pa.dir !== 'out' || pb.dir !== 'in') return false;
     if (pa.kind !== pb.kind) {
-      this.emit({ kind: 'info', text: `${PORT_NAMES[pa.kind]} passt nicht an ${PORT_NAMES[pb.kind]}`, tone: 'warn' });
+      this.emit({ kind: 'info', text: `${PORT_NAMES[pa.kind]} passt nicht an ${PORT_NAMES[pb.kind]}.`, tone: 'warn' });
       return false;
     }
     const conns = this.state.connections;
     if (conns.some((c) => c.from === fromId && c.fromPort === fromPort && c.to === toId && c.toPort === toPort)) return false;
-    const inMax = pb.max ?? 1;
+    if (pa.kind === 'proxy' && this.proxyCycle(fromId, toId)) {
+      this.emit({ kind: 'info', text: 'Proxy-Kette darf keinen Kreis bilden.', tone: 'warn' });
+      return false;
+    }
+    const inMax = this.portCapacity(b, toPort);
     const atIn = conns.filter((c) => c.to === toId && c.toPort === toPort);
     if (atIn.length >= inMax) {
       // Bei Einzel-Eingängen das alte Kabel ersetzen
-      if (inMax === 1) this.disconnect(atIn[0].id);
+      if (inMax === 1) this.removeConnection(atIn[0].id);
       else return false;
     }
-    if (pa.max !== undefined && conns.filter((c) => c.from === fromId && c.fromPort === fromPort).length >= pa.max) {
-      this.emit({ kind: 'info', text: `Ausgang ${pa.label} ist voll belegt (max. ${pa.max})`, tone: 'warn' });
-      return false;
+    const outMax = this.portCapacity(a, fromPort);
+    const atOut = this.state.connections.filter((c) => c.from === fromId && c.fromPort === fromPort);
+    if (atOut.length >= outMax) {
+      if (outMax === 1) this.removeConnection(atOut[0].id);
+      else {
+        this.emit({ kind: 'info', text: `Ausgang „${pa.label}“ ist voll belegt (max. ${outMax}).`, tone: 'warn' });
+        return false;
+      }
     }
-    conns.push({ id: this.state.nextId++, from: fromId, fromPort, to: toId, toPort });
+    this.state.connections.push({ id: this.state.nextId++, from: fromId, fromPort, to: toId, toPort });
     computeRuntime(this.state, this.runtime);
     return true;
   }
 
-  disconnect(connectionId: number): void {
+  /** Würde die Verbindung from → to einen Kreis in der Proxy-Kette erzeugen? */
+  private proxyCycle(fromId: number, toId: number): boolean {
+    let cur: number | undefined = fromId;
+    for (let i = 0; cur !== undefined && i < 64; i++) {
+      if (cur === toId) return true;
+      const id: number = cur;
+      cur = this.state.connections.find((c) => c.to === id && c.toPort === 'proxyIn')?.from;
+    }
+    return false;
+  }
+
+  private removeConnection(connectionId: number): void {
     this.state.connections = this.state.connections.filter((c) => c.id !== connectionId);
     this.flows.delete(connectionId);
+  }
+
+  disconnect(connectionId: number): void {
+    this.removeConnection(connectionId);
     computeRuntime(this.state, this.runtime);
   }
 
@@ -165,6 +226,53 @@ export class Game {
     if (!node) return;
     node.x = x;
     node.y = y;
+  }
+
+  // ---------- Forschung ----------
+
+  researchState(r: ResearchConfig): 'done' | 'available' | 'locked' {
+    if (this.state.research.includes(r.id)) return 'done';
+    return r.requires.every((q) => this.state.research.includes(q)) ? 'available' : 'locked';
+  }
+
+  research(id: string): boolean {
+    const r = CONFIG.research.find((x) => x.id === id);
+    if (!r || this.researchState(r) !== 'available') return false;
+    if (!pay(this.state, r.cost)) return false;
+    this.state.research.push(r.id);
+    computeRuntime(this.state, this.runtime);
+    this.emit({ kind: 'research', id: r.id });
+    return true;
+  }
+
+  // ---------- Prestige ----------
+
+  pendingTokens(): number {
+    return pendingTokens(this.state);
+  }
+
+  prestige(): boolean {
+    if (this.pendingTokens() < 1) return false;
+    const camera = this.state.camera;
+    this.replaceState(prestigeReset(this.state));
+    this.state.camera = camera;
+    this.save();
+    return true;
+  }
+
+  perkCost(p: PerkConfig): number {
+    return Math.ceil(p.cost * Math.pow(p.growth, perkLevel(this.state, p.id)));
+  }
+
+  buyPerk(id: string): boolean {
+    const p = CONFIG.perks.find((x) => x.id === id);
+    if (!p || perkLevel(this.state, p.id) >= p.max) return false;
+    const cost = this.perkCost(p);
+    if (this.state.prestige.tokens < cost) return false;
+    this.state.prestige.tokens -= cost;
+    this.state.prestige.perks[p.id] = perkLevel(this.state, p.id) + 1;
+    computeRuntime(this.state, this.runtime);
+    return true;
   }
 
   // ---------- Speichern ----------
@@ -181,6 +289,22 @@ export class Game {
     return true;
   }
 
+  exportSave(): string {
+    this.state.savedAt = Date.now();
+    return btoa(unescape(encodeURIComponent(serialize(this.state))));
+  }
+
+  importSave(text: string): boolean {
+    try {
+      const json = decodeURIComponent(escape(atob(text.trim())));
+      this.replaceState(deserialize(json));
+      this.save();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   hardReset(): void {
     clearStorage();
     this.replaceState(createInitialState());
@@ -189,6 +313,8 @@ export class Game {
   replaceState(s: GameState): void {
     this.state = s;
     this.runtime.clear();
+    this.flows.clear();
+    this.accumulator = 0;
     computeRuntime(this.state, this.runtime);
   }
 }
