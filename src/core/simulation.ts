@@ -3,6 +3,7 @@ import { getModifiers, type Modifiers } from './state';
 import { contractsTick } from './systems/contracts';
 import { marketTick } from './systems/crypto';
 import { consumeExploit, craftTick, exploitReady } from './systems/exploits';
+import { worldEventsTick } from './systems/worldEvents';
 import type { Connection, GameEvent, GameState, NodeInstance, NodeRuntime } from './types';
 import { NODE_DEFS } from '../nodes/definitions';
 import { stat } from '../nodes/stats';
@@ -535,7 +536,8 @@ export function tick(
   }
   if (state.blackout > 0) state.blackout = Math.max(0, state.blackout - dt);
   for (const n of state.nodes) if (n.locked) n.locked = n.locked > dt ? n.locked - dt : undefined;
-  // --- Welt: Kryptokurs ---
+  // --- Welt: Ereignisse und Kryptokurs ---
+  worldEventsTick(state, dt, events, !!opts.offline);
   marketTick(state, dt);
 
   computeRuntime(state, runtime, flows);

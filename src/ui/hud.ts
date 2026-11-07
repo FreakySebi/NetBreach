@@ -1,6 +1,8 @@
 import type { Game } from '../core/game';
 import { fmt, fmtBytes, fmtMoney } from '../core/format';
-import { HtmlView } from './dom';
+import { CONFIG } from '../core/config';
+import { worldEventById } from '../core/systems/worldEvents';
+import { esc, HtmlView } from './dom';
 import { nextObjective } from './objectives';
 
 /** Misst Einnahmen pro Sekunde über ein gleitendes Fenster. */
@@ -27,11 +29,38 @@ export class Hud {
   private dataRate = new RateMeter();
   private sampleAcc = 0;
 
+  private eventsView: HtmlView | null = null;
+  private newsView: HtmlView | null = null;
+
   constructor(
     el: HTMLElement,
     private game: Game,
+    ticker?: HTMLElement,
   ) {
     this.view = new HtmlView(el, () => this.html());
+    if (ticker) {
+      this.eventsView = new HtmlView(ticker.querySelector<HTMLElement>('.ticker-events')!, () => this.eventsHtml());
+      this.newsView = new HtmlView(ticker.querySelector<HTMLElement>('.ticker-track')!, () => this.newsHtml());
+    }
+  }
+
+  /** Aktive Ereignisse mit Restzeit (links im Ticker). */
+  private eventsHtml(): string {
+    const s = this.game.state;
+    const chips = s.worldEvents.active.map((e) => {
+      const cfg = worldEventById(e.id);
+      const fam = CONFIG.exploits.families.find((f) => f.id === e.family);
+      return `<span class="chip ${cfg?.tone ?? 'info'}" title="${esc(cfg?.desc ?? '')}">${esc(cfg?.name ?? e.id)}${fam ? ' · ' + esc(fam.name) : ''} <b>${Math.ceil(e.left)}s</b></span>`;
+    });
+    return chips.length ? chips.join('') : '<span class="chip idle">▣ NEWS</span>';
+  }
+
+  /** Laufende Schlagzeilen (ändern sich selten → Animation läuft ungestört weiter). */
+  private newsHtml(): string {
+    const news = this.game.state.worldEvents.news;
+    const items = news.length ? [...news].reverse() : ['Keine besonderen Vorkommnisse im Netz.'];
+    const text = items.map((n) => `<span>${esc(n)}</span>`).join('<span class="sep">///</span>');
+    return `<div class="ticker-scroll">${text}<span class="sep">///</span>${text}</div>`;
   }
 
   resetRates(): void {
@@ -48,6 +77,8 @@ export class Hud {
       this.dataRate.push(t, this.game.state.run.data);
     }
     this.view.update();
+    this.eventsView?.update();
+    this.newsView?.update();
   }
 
   private html(): string {

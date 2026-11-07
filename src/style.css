@@ -181,12 +181,13 @@ main {
   border-bottom: 1px solid var(--line);
 }
 .tabs button {
-  flex: 1;
+  flex: 1 1 auto;
   border: none;
   border-radius: 0;
   background: transparent;
   color: var(--dim);
-  padding: 10px 6px;
+  padding: 9px 5px;
+  font-size: 11px;
   border-bottom: 2px solid transparent;
 }
 .tabs button.active {
@@ -622,4 +623,76 @@ button.wide {
   height: 100%;
   background: var(--green);
   box-shadow: 0 0 6px var(--green);
+}
+
+/* ---------- News-Ticker ---------- */
+
+#ticker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  padding: 0 12px;
+  background: #060b09;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  overflow: hidden;
+}
+.ticker-events {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.chip {
+  padding: 1px 8px;
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  white-space: nowrap;
+}
+.chip.ok {
+  border-color: var(--green);
+  color: var(--green);
+}
+.chip.bad {
+  border-color: var(--red);
+  color: #ff9aac;
+  animation: blink 1.2s infinite;
+}
+.chip.warn {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+.chip.idle {
+  border-color: var(--line);
+  color: var(--dim);
+}
+.ticker-news {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+}
+.ticker-scroll {
+  display: inline-block;
+  padding-left: 100%;
+  animation: ticker 60s linear infinite;
+  color: var(--dim);
+}
+.ticker-scroll .sep {
+  margin: 0 14px;
+  color: var(--green);
+}
+@keyframes ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ticker-scroll {
+    animation: none;
+    padding-left: 0;
+  }
 }

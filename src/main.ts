@@ -4,6 +4,7 @@ import { Game } from './core/game';
 import { fmt, fmtBytes, fmtMoney, fmtTime } from './core/format';
 import type { OfflineReport } from './core/offline';
 import { isCompute, targetById } from './core/simulation';
+import { worldEventById } from './core/systems/worldEvents';
 import type { NodeTypeId } from './core/types';
 import { layoutOf } from './nodes/definitions';
 import { nodeConfig } from './nodes/stats';
@@ -25,7 +26,7 @@ const camera = new Camera(game.state.camera);
 const canvas = $<HTMLCanvasElement>('canvas');
 const renderer = new Renderer(canvas, game, camera, ui);
 const toasts = new Toasts($('toasts'));
-const hud = new Hud($('topbar'), game);
+const hud = new Hud($('topbar'), game, $('ticker'));
 
 /** Freien Platz nahe der Bildschirmmitte für einen neuen Node finden. */
 function freeSpot(type: NodeTypeId): [number, number] {
@@ -231,6 +232,11 @@ game.on((e) => {
       if (a) toasts.show(`🏆 Erfolg: ${a.name}`, 'ok', 6000);
       break;
     }
+    case 'worldEvent': {
+      const tone = worldEventById(e.id)?.tone ?? 'info';
+      toasts.show((e.started ? '📰 ' : '') + e.text, e.started ? tone : 'info', e.started ? 6000 : 3000);
+      break;
+    }
     case 'contract':
       toasts.show(e.text, e.success ? 'ok' : 'bad', 5000);
       break;
@@ -312,4 +318,5 @@ function frame(now: number): void {
 requestAnimationFrame(frame);
 
 // Debug-Zugriff in der Konsole
-(window as unknown as { netbreach: Game }).netbreach = game;
+(window as unknown as { netbreach: Game; netbreachConfig: typeof CONFIG }).netbreach = game;
+(window as unknown as { netbreachConfig: typeof CONFIG }).netbreachConfig = CONFIG;

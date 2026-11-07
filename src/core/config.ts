@@ -550,7 +550,7 @@ export const CONFIG = {
       desc: 'Wehrt Angriffe rivalisierender Hacker ab. Wirkt auf das ganze Netzwerk.',
       cost: { money: 150000 },
       growth: 1.6,
-      stats: { defense: 60, powerBase: 150, heatBase: 8 },
+      stats: { defense: 60, powerBase: 150, heatBase: 8, coolBuiltIn: 8 },
       upgrades: [{ id: 'def', label: 'Regelwerk +30 %', stat: 'defense', mode: 'mul', amount: 1.3, cost: { money: 80000 }, growth: 1.6, max: 30 }],
     },
     honeypot: {
@@ -582,7 +582,7 @@ export const CONFIG = {
       desc: 'Stellt Exploits aus Daten und Rechenleistung her. GPUs beschleunigen die Entwicklung.',
       cost: { money: 300000 },
       growth: 1.8,
-      stats: { ops: 60, capacity: 20000, powerBase: 300, heatBase: 10 },
+      stats: { ops: 60, capacity: 20000, powerBase: 300, heatBase: 10, coolBuiltIn: 10 },
       upgrades: [
         { id: 'ops', label: 'Entwickler-Team +40 %', stat: 'ops', mode: 'mul', amount: 1.4, cost: { money: 100000 }, growth: 1.6, max: 30 },
         { id: 'cap', label: 'Datenspeicher ×2', stat: 'capacity', mode: 'mul', amount: 2, cost: { money: 50000 }, growth: 1.7, max: 20 },

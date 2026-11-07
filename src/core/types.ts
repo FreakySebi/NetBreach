@@ -268,4 +268,5 @@ export type GameEvent =
   | { kind: 'achievement'; id: string }
   | { kind: 'exploit'; family: string; count: number }
   | { kind: 'contract'; id: number; success: boolean; text: string }
+  | { kind: 'worldEvent'; id: string; started: boolean; text: string }
   | { kind: 'info'; text: string; tone?: 'ok' | 'warn' | 'bad' };
