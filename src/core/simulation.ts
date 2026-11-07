@@ -1,5 +1,6 @@
 import { CONFIG, type TargetConfig } from './config';
 import { getModifiers, type Modifiers } from './state';
+import { checkAchievements } from './systems/achievements';
 import { contractsTick } from './systems/contracts';
 import { marketTick } from './systems/crypto';
 import { consumeExploit, craftTick, exploitReady } from './systems/exploits';
@@ -652,4 +653,7 @@ export function tick(
   // --- Trace: erst prüfen (Hacks können 100 % erreicht haben), dann abbauen ---
   if (state.trace >= 100 && state.raidTimer <= 0) raid(state, events);
   else state.trace = Math.max(0, state.trace - (CONFIG.trace.baseDecay + mods.traceDecay) * dt);
+
+  // --- Erfolge ---
+  checkAchievements(state, dt, events);
 }

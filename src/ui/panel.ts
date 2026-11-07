@@ -3,6 +3,7 @@ import { canAfford } from '../core/economy';
 import type { Game } from '../core/game';
 import { fmt, fmtBytes, fmtMoney, fmtPct, fmtTime } from '../core/format';
 import { lockReason, targetWork } from '../core/simulation';
+import { achievementGoal, achievementValue } from '../core/systems/achievements';
 import { contractText, rewardText } from '../core/systems/contracts';
 import { priceTrend } from '../core/systems/crypto';
 import { exploitAutoOn } from '../core/systems/exploits';
@@ -26,6 +27,7 @@ export interface PanelHooks {
   exportSave(): void;
   importSave(): void;
   sellCrypto(fraction: number): void;
+  foundCollective(): void;
   buyCrypto(fraction: number): void;
 }
 
@@ -57,6 +59,8 @@ export class Panel {
       { id: 'contracts', label: 'Aufträge', visible: () => this.game.state.reputation >= CONFIG.contracts.minRep || this.game.state.contracts.offers.length > 0, render: () => this.contractsTab() },
       { id: 'crypto', label: 'Krypto', visible: () => this.cryptoVisible(), render: () => this.cryptoTab() },
       { id: 'identity', label: 'Identität', visible: () => this.identityVisible(), render: () => this.identity() },
+      { id: 'achievements', label: 'Erfolge', visible: () => true, render: () => this.achievementsTab() },
+      { id: 'stats', label: 'Statistik', visible: () => true, render: () => this.statsTab() },
       { id: 'system', label: 'System', visible: () => true, render: () => this.system() },
     ];
     this.tabsView = new HtmlView(nav, () =>
@@ -108,6 +112,12 @@ export class Panel {
         break;
       case 'perk':
         this.hooks.buyPerk(data.id!);
+        break;
+      case 'collective':
+        this.hooks.foundCollective();
+        break;
+      case 'collective-upg':
+        this.game.buyCollective(data.id!);
         break;
       case 'export':
         this.hooks.exportSave();
@@ -322,26 +332,84 @@ export class Panel {
       </div>
       <p class="hint">Mindestens ${fmtMoney(CONFIG.prestige.minMoney)} in diesem Lauf verdienen für den ersten Token.</p>
       <button class="primary wide" data-action="prestige" ${pending >= 1 ? '' : 'disabled'}>☠ Neue Identität annehmen (+${fmt(pending)} ◆)</button>
-      <h3>Permanente Perks</h3>${perks.join('')}`;
+      <h3>Permanente Perks</h3>${perks.join('')}${this.collectiveSection()}`;
+  }
+
+  private collectiveSection(): string {
+    const s = this.game.state;
+    const c = s.collective;
+    const cfg = CONFIG.collective;
+    if (s.prestige.identities < 1 && c.founded === 0) return '';
+    const pending = this.game.pendingShares();
+    const upgrades = cfg.upgrades.map((u) => {
+      const lvl = c.upgrades[u.id] ?? 0;
+      const maxed = lvl >= u.max;
+      const cost = this.game.collectiveCost(u);
+      return `<div class="card" style="--accent:#c6ff00"><div class="card-head"><span>${esc(u.name)}</span><span class="c-dim">${lvl}/${u.max}</span></div>
+        <div class="card-desc">${esc(u.desc)}</div>
+        <button data-action="collective-upg" data-id="${u.id}" ${maxed || c.shares < cost ? 'disabled' : ''}>${maxed ? 'MAX' : `Kaufen · ${cost} ✪`}</button></div>`;
+    });
+    return `<h3>Kollektiv gründen</h3>
+      <p class="hint">Zweite Prestige-Ebene: Ab ${cfg.minIdentities} Identitätswechseln und ${fmt(cfg.minTokens)} verdienten Ghost-Tokens kannst du
+      mit anderen Hackern ein Kollektiv gründen. Tokens, Perks und der aktuelle Lauf werden zurückgesetzt,
+      dafür gibt es Kollektiv-Anteile (✪) für sehr starke dauerhafte Boni. Erfolge und Statistik bleiben.</p>
+      <div class="kv">
+        <span>Anteile</span><b class="lime">${fmt(c.shares)} ✪</b>
+        <span>Gründungen</span><b>${fmt(c.founded)}</b>
+        <span>Identitäten</span><b>${fmt(s.prestige.identities)} / ${cfg.minIdentities}</b>
+        <span>Tokens gesamt</span><b>${fmt(s.prestige.tokensTotal)} / ${fmt(cfg.minTokens)}</b>
+        <span>Bei Gründung</span><b class="lime">+${fmt(pending)} ✪</b>
+      </div>
+      <button class="primary wide" data-action="collective" ${pending >= 1 ? '' : 'disabled'}>✪ Kollektiv gründen (+${fmt(pending)} ✪)</button>
+      ${c.sharesTotal > 0 || pending > 0 ? `<h3>Kollektiv-Boni</h3>${upgrades.join('')}` : ''}`;
+  }
+
+  private achievementsTab(): string {
+    const s = this.game.state;
+    const done = CONFIG.achievements.filter((a) => s.achievements.includes(a.id)).length;
+    const cards = CONFIG.achievements.map((a) => {
+      const got = s.achievements.includes(a.id);
+      const goal = achievementGoal(a);
+      const value = Math.min(goal, achievementValue(s, a));
+      const bonus = a.mods ? '<span class="tag">Bonus</span>' : '';
+      return `<div class="ach ${got ? 'got' : ''}"><div class="ach-icon">${got ? '🏆' : '·'}</div>
+        <div><b>${esc(a.name)}</b> ${bonus}<br><small>${esc(a.desc)}</small>
+        ${got ? '' : `<div class="pbar"><div style="width:${((value / Math.max(goal, 1e-9)) * 100).toFixed(1)}%"></div></div>`}</div></div>`;
+    });
+    return `<h3>Erfolge (${done}/${CONFIG.achievements.length})</h3><p class="hint">Erfolge bleiben über alle Identitäten erhalten. Manche geben kleine dauerhafte Boni.</p>${cards.join('')}`;
+  }
+
+  private statsTab(): string {
+    const s = this.game.state;
+    const st = s.stats;
+    const row = (k: string, v: string) => `<span>${k}</span><b>${v}</b>`;
+    return `<h3>Dieser Lauf</h3><div class="kv">
+        ${row('Spielzeit', fmtTime(s.run.playTime))}${row('Hacks', fmt(s.run.hacks))}
+        ${row('Verdient', fmtMoney(s.run.money))}${row('Daten verkauft', fmtBytes(s.run.data))}
+        ${row('Krypto erbeutet', fmt(s.run.crypto, 3) + ' ₿')}${row('Razzien', fmt(s.run.raids))}
+        ${row('Forschung', `${s.research.length} / ${CONFIG.research.length}`)}${row('Nodes', fmt(s.nodes.length))}
+      </div>
+      <h3>Gesamt</h3><div class="kv">
+        ${row('Spielzeit', fmtTime(st.playTime))}${row('Hacks', fmt(st.hacks))}
+        ${row('Verdientes Geld', fmtMoney(s.allTimeMoney))}${row('Daten verkauft', fmtBytes(st.dataSold))}
+        ${row('Klicks', fmt(st.clicks))}${row('Razzien', fmt(st.raids))}
+        ${row('Identitäten', fmt(s.prestige.identities))}${row('Kollektive', fmt(s.collective.founded))}
+        ${row('Aufträge erfüllt', fmt(st.contracts))}${row('Exploits hergestellt', fmt(st.exploits))}
+        ${row('Angriffe', `${fmt(st.repelled)} / ${fmt(st.attacks)} abgewehrt`)}${row('Rivalen besiegt', fmt(st.rivalsBeaten))}
+        ${row('Größtes Botnetz', fmt(st.maxDevices, 0) + ' Geräte')}${row('Krypto verkauft', fmt(st.cryptoSold, 2) + ' ₿')}
+        ${row('Minispiele gewonnen', fmt(st.minigames))}${row('Kern geknackt', fmt(st.coreCracks) + '×')}
+        ${row('Erfolge', `${s.achievements.length} / ${CONFIG.achievements.length}`)}
+      </div>
+      <h3>Hacks pro Ziel</h3><div class="kv">
+        ${CONFIG.targets.filter((t) => st.targets[t.id]).map((t) => row(esc(t.name), fmt(st.targets[t.id]))).join('') || '<span>Noch keine</span><b></b>'}
+      </div>`;
   }
 
   private system(): string {
-    const s = this.game.state;
     return `<h3>System</h3>
       <div class="row"><button data-action="save">💾 Speichern</button><button data-action="load">⟳ Laden</button></div>
       <div class="row"><button data-action="export">⇪ Export</button><button data-action="import">⇩ Import</button></div>
       <p class="hint">Autosave alle ${CONFIG.autosaveSeconds} s im Browser (localStorage).</p>
-      <h3>Statistik</h3>
-      <div class="kv">
-        <span>Spielzeit</span><b>${fmtTime(s.run.playTime)}</b>
-        <span>Hacks</span><b>${fmt(s.run.hacks)}</b>
-        <span>Daten verkauft</span><b>${fmtBytes(s.run.data)}</b>
-        <span>Krypto (Lauf)</span><b>${fmt(s.run.crypto, 3)} ₿</b>
-        <span>Razzien</span><b>${fmt(s.run.raids)}</b>
-        <span>Identitäten</span><b>${fmt(s.prestige.identities)}</b>
-        <span>Verdient (Lauf)</span><b>${fmtMoney(s.run.money)}</b>
-        <span>Verdient (gesamt)</span><b>${fmtMoney(s.allTimeMoney)}</b>
-      </div>
       <h3>Gefahrenzone</h3>
       <button class="danger" data-action="reset">Spielstand löschen</button>
       <h3>Steuerung</h3>

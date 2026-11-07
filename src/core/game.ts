@@ -1,11 +1,11 @@
-import { CONFIG, type PerkConfig, type ResearchConfig } from './config';
+import { CONFIG, type CollectiveUpgradeConfig, type PerkConfig, type ResearchConfig } from './config';
 import { canAfford, pay, refund } from './economy';
 import { simulateOffline, type OfflineReport } from './offline';
 import { abandonContract, acceptContract } from './systems/contracts';
 import { buyCrypto, sellCrypto } from './systems/crypto';
 import { exploitAutoOn, familyById } from './systems/exploits';
 import { clearStorage, deserialize, loadFromStorage, saveToStorage, serialize } from './save';
-import { createInitialState, getModifiers, pendingTokens, perkLevel, prestigeReset } from './state';
+import { collectiveLevel, collectiveReset, createInitialState, getModifiers, pendingShares, pendingTokens, perkLevel, prestigeReset } from './state';
 import { canHack, computeRuntime, earn, isCompute, startHack, targetById, tick, type FlowMap, type RuntimeMap } from './simulation';
 import type { GameEvent, GameState, NodeInstance, NodeTypeId } from './types';
 import { NODE_DEFS, PORT_NAMES, portDef } from '../nodes/definitions';
@@ -304,6 +304,36 @@ export class Game {
     this.replaceState(prestigeReset(this.state));
     this.state.camera = camera;
     this.save();
+    return true;
+  }
+
+  // ---------- Kollektiv (zweite Prestige-Ebene) ----------
+
+  pendingShares(): number {
+    return pendingShares(this.state);
+  }
+
+  foundCollective(): boolean {
+    if (this.pendingShares() < 1) return false;
+    const camera = this.state.camera;
+    this.replaceState(collectiveReset(this.state));
+    this.state.camera = camera;
+    this.save();
+    return true;
+  }
+
+  collectiveCost(u: CollectiveUpgradeConfig): number {
+    return Math.ceil(u.cost * Math.pow(u.growth, collectiveLevel(this.state, u.id)));
+  }
+
+  buyCollective(id: string): boolean {
+    const u = CONFIG.collective.upgrades.find((x) => x.id === id);
+    if (!u || collectiveLevel(this.state, u.id) >= u.max) return false;
+    const cost = this.collectiveCost(u);
+    if (this.state.collective.shares < cost) return false;
+    this.state.collective.shares -= cost;
+    this.state.collective.upgrades[u.id] = collectiveLevel(this.state, u.id) + 1;
+    computeRuntime(this.state, this.runtime);
     return true;
   }
 

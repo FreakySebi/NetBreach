@@ -32,6 +32,7 @@ const seenTypes = new Set<NodeTypeId>();
 let runStart = 0;
 let runIndex = 1;
 let coreCrackedAt = null as { time: number; run: number } | null;
+let collectiveAt = 0;
 
 game.on((e) => {
   if (e.kind === 'hack' && !firstHack.has(e.targetId)) {
@@ -342,6 +343,7 @@ function playStep(): void {
 
 function maybePrestige(): void {
   const st = s();
+  if (coreCrackedAt) return;
   const pending = game.pendingTokens();
   const runTime = now() - runStart;
   if (pending < 1) return;
@@ -396,7 +398,24 @@ while (now() < total) {
     lastReport = now();
     summary(`Status Lauf ${runIndex}`);
   }
-  if (coreCrackedAt && now() - coreCrackedAt.time > 600) break;
+  // Nach dem Kern: noch eine Identität, dann (falls möglich) ein Kollektiv gründen und 2 h weiterspielen
+  if (coreCrackedAt && !collectiveAt && now() - coreCrackedAt.time > 600) {
+    summary(`Lauf ${runIndex} beendet`);
+    game.prestige();
+    runIndex++;
+    log(`══ Neue Identität #${s().prestige.identities} · Tokens gesamt ${s().prestige.tokensTotal} · Anteile möglich: ${game.pendingShares()}`);
+    if (game.foundCollective()) {
+      for (let guard = 0; guard < 50; guard++) {
+        const u = CONFIG.collective.upgrades.filter((x) => (s().collective.upgrades[x.id] ?? 0) < x.max && game.collectiveCost(x) <= s().collective.shares).sort((a, b) => game.collectiveCost(a) - game.collectiveCost(b))[0];
+        if (!u) break;
+        game.buyCollective(u.id);
+      }
+      log(`✪ Kollektiv gegründet · Boni ${JSON.stringify(s().collective.upgrades)}`);
+    }
+    collectiveAt = now();
+    runStart = now();
+  }
+  if (collectiveAt && now() - collectiveAt > 7200) break;
 }
 summary('Ende');
 console.log('\n── Ziele: freigeschaltet / erster Hack ──');
@@ -409,5 +428,6 @@ for (const t of CONFIG.targets) {
 console.log(`\nRivalen-Angriffe: ${rivalStats.ok} abgewehrt, ${rivalStats.fail} erfolgreich · Rivalen besiegt: ${s().stats.rivalsBeaten}`);
 console.log(`Aufträge: ${contractStats.ok} erfüllt, ${contractStats.fail} gescheitert`);
 console.log(`Exploits hergestellt: ${exploitsMade} · Krypto verkauft: ${fmt(s().stats.cryptoSold, 1)} ₿ · Kurs am Ende: ${fmtMoney(s().market.price)}`);
+console.log(`Erfolge: ${s().achievements.length}/${CONFIG.achievements.length} · ${s().achievements.join(', ')}`);
 console.log(`Forschung jemals: ${seenResearch.size}/${CONFIG.research.length} · Identitäten: ${s().prestige.identities} · Razzien gesamt: ${s().stats.raids}`);
 console.log(coreCrackedAt ? `Der Kern: geknackt nach ${fmtTime(coreCrackedAt.time)} in Lauf ${coreCrackedAt.run}` : 'Der Kern: NICHT geknackt');

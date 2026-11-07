@@ -150,6 +150,26 @@ const panel = new Panel($('sidepanel'), game, {
     const coins = game.buyCrypto(fraction);
     if (coins > 0) toasts.show(`Krypto gekauft: +${fmt(coins, 4)} ₿`, 'ok', 2500);
   },
+  foundCollective() {
+    const n = game.pendingShares();
+    showModal(
+      'Kollektiv gründen?',
+      `Du erhältst <b class="lime">${fmt(n)} Kollektiv-Anteile</b>. Lauf, Ghost-Tokens und Perks werden zurückgesetzt. Erfolge, Statistik und bisherige Kollektiv-Boni bleiben.`,
+      [
+        { label: 'Abbrechen' },
+        {
+          label: 'Gründen',
+          primary: true,
+          action: () => {
+            if (game.foundCollective()) {
+              rebind();
+              toasts.show(`Kollektiv gegründet! +${fmt(n)} ✪`, 'ok', 6000);
+            }
+          },
+        },
+      ],
+    );
+  },
   buyPerk(id) {
     game.buyPerk(id);
   },

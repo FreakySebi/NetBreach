@@ -696,3 +696,29 @@ button.wide {
     padding-left: 0;
   }
 }
+
+.lime {
+  color: #c6ff00;
+}
+.ach {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--line);
+  font-size: 11px;
+  opacity: 0.6;
+}
+.ach.got {
+  opacity: 1;
+}
+.ach.got b {
+  color: var(--green);
+}
+.ach small {
+  color: var(--dim);
+}
+.ach-icon {
+  font-size: 16px;
+  text-align: center;
+}
