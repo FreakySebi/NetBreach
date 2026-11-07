@@ -60,6 +60,7 @@ export class Hud {
       <div class="res"><label>Geld</label><b class="c-money">${fmtMoney(s.money)}</b><small>+${fmtMoney(this.moneyRate.rate())}/s</small></div>
       <div class="res"><label>Daten</label><b class="c-data">${fmtBytes(data)}</b><small>${fmtBytes(this.dataRate.rate())}/s verkauft</small></div>
       ${showCrypto ? `<div class="res"><label>Krypto</label><b class="c-crypto">${fmt(s.crypto, 3)} ₿</b></div>` : ''}
+      ${s.models > 0 || s.research.includes('quantum') ? `<div class="res"><label>Modelle</label><b class="c-models">${fmt(s.models)} ◇</b></div>` : ''}
       <div class="res"><label>Reputation</label><b class="c-rep">${fmt(s.reputation)}</b></div>
       <div class="res trace ${traceCls}">
         <label>Trace</label>

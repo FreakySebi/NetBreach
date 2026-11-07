@@ -28,8 +28,10 @@ function emptyRuntime(): NodeRuntime {
     bandwidth: 0,
     stealth: 0,
     gpuBonus: 0,
+    botOps: 0,
     boost: 0,
     scripted: false,
+    waiting: 0,
     bufferCap: 0,
     flags: new Set(),
     rate: 0,
@@ -48,15 +50,63 @@ export function heatLoad(node: NodeInstance): number {
   return stat(node, 'heatBase') + stat(node, 'heatPerCore') * stat(node, 'cores');
 }
 
-/** Effektive Rechenleistung eines Rechners für ein bestimmtes Ziel. */
-export function hackPower(node: NodeInstance, rt: NodeRuntime, target: TargetConfig | undefined, mods: Modifiers): number {
-  const base = stat(node, 'cores') * stat(node, 'clock');
-  const gpu = rt.gpuBonus * (target?.gpuFactor ?? 0);
-  return (base + gpu) * rt.powerRatio * rt.thermalRatio * mods.hackSpeed * (1 + rt.boost);
+/** Effektive Rechenleistung eines Rechners für ein bestimmtes Ziel (bzw. die aktuelle Phase). */
+export function hackPower(node: NodeInstance, rt: NodeRuntime, target: TargetConfig | undefined, mods: Modifiers, phase = 0): number {
+  const health = rt.powerRatio * rt.thermalRatio * (node.locked ? 0 : 1);
+  const p = target?.phases?.[phase];
+  if (p?.resource === 'gpu') return rt.gpuBonus * health * mods.hackSpeed * (1 + rt.boost);
+  if (p?.resource === 'bandwidth') return rt.bandwidth * health;
+  const base = stat(node, 'cores') * stat(node, 'clock') + rt.botOps;
+  const gpu = p ? 0 : rt.gpuBonus * (target?.gpuFactor ?? 0);
+  return (base + gpu) * health * mods.hackSpeed * (1 + rt.boost);
+}
+
+/** Security eines Ziels inklusive Zero-Day-Ereignissen und Rivalen-Stufe. */
+export function effectiveSecurity(state: GameState, t: TargetConfig): number {
+  let sec = t.security;
+  if (t.rival) sec *= Math.pow(CONFIG.rivals.rivalSecurityGrowth, state.rival.level);
+  for (const e of state.worldEvents.active) {
+    const cfg = CONFIG.worldEvents.types.find((x) => x.id === e.id);
+    if (cfg?.securityMult && e.family === t.family) sec *= cfg.securityMult;
+  }
+  return sec;
+}
+
+/** Geschätzte Dauer eines Hacks in Sekunden (bei Phasen: Summe aller Phasen). */
+export function estimateHackTime(state: GameState, node: NodeInstance, rt: NodeRuntime, t: TargetConfig, mods: Modifiers): number {
+  const parts = t.phases ? t.phases.map((p, i) => [p.amount, i] as const) : [[effectiveSecurity(state, t), 0] as const];
+  let total = 0;
+  for (const [amount, i] of parts) {
+    const p = hackPower(node, rt, t, mods, i);
+    if (p <= 0) return Infinity;
+    total += Math.max(CONFIG.minHackTime, amount / p);
+  }
+  return total;
+}
+
+/** Gesamtarbeit eines Ziels (bei Phasen: Summe, nur für Anzeigen). */
+export function targetWork(state: GameState, t: TargetConfig): number {
+  return t.phases ? t.phases.reduce((a, p) => a + p.amount, 0) : effectiveSecurity(state, t);
 }
 
 export function targetUnlocked(state: GameState, t: TargetConfig): boolean {
-  return state.reputation >= t.reqRep;
+  if (state.reputation < t.reqRep) return false;
+  if (t.reqIdentities && state.prestige.identities < t.reqIdentities) return false;
+  if (t.reqResearch && !state.research.includes(t.reqResearch)) return false;
+  if (t.rival && !state.rival.located) return false;
+  return true;
+}
+
+/** Warum ein Ziel (noch) gesperrt ist – für die Anzeige. */
+export function lockReason(state: GameState, t: TargetConfig): string | null {
+  if (t.rival && !state.rival.located) return 'Erst mit Honeypots orten';
+  if (state.reputation < t.reqRep) return `Benötigt ${Math.ceil(t.reqRep).toLocaleString('de-DE')} Reputation`;
+  if (t.reqIdentities && state.prestige.identities < t.reqIdentities) return `Erst nach ${t.reqIdentities} Identitätswechseln`;
+  if (t.reqResearch && !state.research.includes(t.reqResearch)) {
+    const r = CONFIG.research.find((x) => x.id === t.reqResearch);
+    return `Forschung „${r?.name ?? t.reqResearch}“ nötig`;
+  }
+  return null;
 }
 
 export function canHack(state: GameState, node: NodeInstance, t: TargetConfig): boolean {
@@ -105,6 +155,7 @@ export function computeRuntime(state: GameState, runtime: RuntimeMap, flows?: Fl
     rt.powerRatio = 1;
     rt.thermalRatio = 1;
     rt.gpuBonus = 0;
+    rt.botOps = 0;
     rt.boost = 0;
     rt.stealth = 0;
     rt.scripted = false;
@@ -132,17 +183,26 @@ export function computeRuntime(state: GameState, runtime: RuntimeMap, flows?: Fl
     const conns = idx.out(psu.id, 'powerOut');
     let demand = 0;
     for (const c of conns) demand += rtOf(byId.get(c.to)!).demand;
-    const cap = stat(psu, 'capacity');
+    const down = state.blackout > 0 && stat(psu, 'ups') < 1;
+    const cap = down ? 0 : stat(psu, 'capacity');
     const ratio = demand > 0 ? Math.min(1, cap / demand) : 1;
     prt.demand = demand;
     prt.rate = cap;
-    if (demand > cap) prt.flags.add('overload');
+    if (down) prt.flags.add('blackout');
+    else if (demand > cap) prt.flags.add('overload');
     for (const c of conns) {
       const crt = rtOf(byId.get(c.to)!);
       crt.powerRatio = ratio;
-      if (ratio < 1) crt.flags.add('lowPower');
+      if (down) crt.flags.add('blackout');
+      else if (ratio < 1) crt.flags.add('lowPower');
       flow(c, crt.demand * ratio);
     }
+  }
+  for (const node of state.nodes) {
+    if (!node.locked) continue;
+    const rt = rtOf(node);
+    rt.powerRatio = 0;
+    rt.flags.add('locked');
   }
 
   // --- Kühlung ---
@@ -185,6 +245,20 @@ export function computeRuntime(state: GameState, runtime: RuntimeMap, flows?: Fl
     for (const c of idx.out(gpu.id, 'accelOut')) {
       rtOf(byId.get(c.to)!).gpuBonus += grt.power;
       flow(c, grt.power);
+    }
+  }
+
+  // --- Botnetze: Geräte × OPS pro Gerät, geteilt auf angeschlossene Rechner ---
+  for (const bn of state.nodes) {
+    if (bn.type !== 'botnet') continue;
+    const brt = rtOf(bn);
+    brt.power = (bn.devices ?? 0) * stat(bn, 'opsPerDevice') * (bn.locked ? 0 : 1);
+    brt.bufferCap = stat(bn, 'capacity');
+    const conns = idx.out(bn.id, 'botOut');
+    brt.load = conns.length;
+    for (const c of conns) {
+      rtOf(byId.get(c.to)!).botOps += brt.power / conns.length;
+      flow(c, brt.power / conns.length);
     }
   }
 
@@ -240,51 +314,121 @@ export function computeRuntime(state: GameState, runtime: RuntimeMap, flows?: Fl
     }
   }
 
-  // --- Rechner, Speicher, Markt ---
+  // --- Rechner, Speicher, Markt, Sicherheit, Labor ---
   for (const node of state.nodes) {
     const rt = rtOf(node);
+    const health = rt.powerRatio * rt.thermalRatio;
     if (isCompute(node)) {
       rt.bufferCap = stat(node, 'buffer');
-      rt.power = hackPower(node, rt, targetById(node.job?.targetId ?? node.targetId), mods);
+      rt.power = hackPower(node, rt, targetById(node.job?.targetId ?? node.targetId), mods, node.job?.phase ?? 0);
       if (state.raidTimer > 0) rt.flags.add('raided');
     } else if (isStorage(node)) {
       rt.bufferCap = stat(node, 'capacity');
       if (node.buffer >= rt.bufferCap * 0.999) rt.flags.add('storageFull');
     } else if (node.type === 'market') {
       rt.bufferCap = stat(node, 'sellRate') * 2;
+    } else if (node.type === 'firewall') {
+      rt.power = stat(node, 'defense') * health * mods.defense;
+    } else if (node.type === 'honeypot') {
+      rt.bufferCap = stat(node, 'capacity');
+      const baited = node.buffer > 1e-6;
+      if (!baited) rt.flags.add('noBait');
+      rt.power = baited ? stat(node, 'lure') * health : 0;
+    } else if (node.type === 'malware') {
+      rt.bufferCap = stat(node, 'capacity');
+      rt.power = (stat(node, 'ops') + rt.gpuBonus * CONFIG.exploits.gpuFactor) * health * mods.craft;
     }
   }
 }
 
-function completeHack(state: GameState, node: NodeInstance, rt: NodeRuntime, t: TargetConfig, mods: Modifiers, events: GameEvent[]): void {
-  const money = t.money * mods.money;
-  const rep = t.rep * mods.rep;
-  const crypto = (t.crypto ?? 0) * mods.crypto;
-  state.money += money;
-  state.reputation += rep;
-  state.crypto += crypto;
-  state.run.money += money;
-  state.run.crypto += crypto;
-  state.allTimeMoney += money;
-  state.run.hacks++;
-  const free = Math.max(0, rt.bufferCap - node.buffer);
-  node.buffer += Math.min(free, t.data);
-  addTrace(state, t.trace * mods.traceGain * (1 - rt.stealth), events);
-  events.push({ kind: 'hack', nodeId: node.id, targetId: t.id, money, data: t.data, crypto, rep });
+/** Gesamte Abwehrstärke gegen Rivalen-Angriffe. */
+export function defenseRating(state: GameState, runtime: RuntimeMap): number {
+  let d = 0;
+  for (const n of state.nodes) {
+    const rt = runtime.get(n.id);
+    if (!rt) continue;
+    if (n.type === 'firewall') d += rt.power;
+    if (n.type === 'honeypot') d += rt.power * CONFIG.rivals.honeypotDefense;
+  }
+  return d;
 }
 
-function addTrace(state: GameState, amount: number, events: GameEvent[]): void {
+/** Geld gutschreiben (zählt für Prestige und Statistik). */
+export function earn(state: GameState, money: number): void {
+  state.money += money;
+  state.run.money += money;
+  state.allTimeMoney += money;
+}
+
+function completeHack(state: GameState, node: NodeInstance, rt: NodeRuntime, t: TargetConfig, mods: Modifiers, events: GameEvent[]): void {
+  const scale = t.rival ? Math.pow(CONFIG.rivals.rivalSecurityGrowth, state.rival.level) : 1;
+  const money = t.money * mods.money * scale;
+  const rep = t.rep * mods.rep * scale;
+  const crypto = (t.crypto ?? 0) * mods.crypto * scale;
+  const models = (t.models ?? 0) * mods.models;
+  earn(state, money);
+  state.reputation += rep;
+  state.crypto += crypto;
+  state.models += models;
+  state.run.crypto += crypto;
+  state.run.hacks++;
+  state.stats.hacks++;
+  state.stats.targets[t.id] = (state.stats.targets[t.id] ?? 0) + 1;
+  const free = Math.max(0, rt.bufferCap - node.buffer);
+  node.buffer += Math.min(free, t.data);
+  if (t.botnet) {
+    for (const bn of state.nodes) {
+      if (bn.type !== 'botnet') continue;
+      bn.devices = Math.min(stat(bn, 'capacity'), (bn.devices ?? 0) + t.botnet * stat(bn, 'spread') * mods.botnet);
+    }
+  }
+  if (t.effect === 'blackout') {
+    state.blackout = CONFIG.blackout.seconds;
+    events.push({ kind: 'info', text: `Stromausfall! Netzteile ohne USV sind ${CONFIG.blackout.seconds} s aus.`, tone: 'warn' });
+  }
+  if (t.rival) {
+    state.rival.located = false;
+    state.rival.track = 0;
+    state.rival.level++;
+    state.stats.rivalsBeaten++;
+    events.push({ kind: 'info', text: 'Rivalen-Netz zerschlagen! Die nächste Gruppe wird stärker sein.', tone: 'ok' });
+  }
+  if (t.phases) state.stats.coreCracks++;
+  events.push({ kind: 'hack', nodeId: node.id, targetId: t.id, money, data: t.data, crypto, rep, models });
+}
+
+export function addTrace(state: GameState, amount: number, events: GameEvent[]): void {
   const before = state.trace;
   state.trace = Math.min(100, state.trace + amount);
   if (before < CONFIG.trace.warnAt && state.trace >= CONFIG.trace.warnAt) events.push({ kind: 'traceWarning' });
 }
 
-/** Startet einen Hack, falls möglich. */
-export function startHack(state: GameState, node: NodeInstance): boolean {
-  if (node.job || state.raidTimer > 0) return false;
+/** Trace, den ein Hack dieses Rechners auf dieses Ziel verursacht. */
+export function hackTrace(state: GameState, rt: NodeRuntime | undefined, t: TargetConfig): number {
+  return t.trace * getModifiers(state).traceGain * (1 - (rt?.stealth ?? 0));
+}
+
+/**
+ * Startet einen Hack, falls möglich. Der Einbruch hinterlässt sofort Spuren:
+ * Der Trace steigt beim Start. Mit `traceLimit` (Scripts) wird ab dieser Grenze
+ * nicht gestartet, und auch nicht, wenn der Hack selbst eine Razzia auslösen würde.
+ */
+export function startHack(
+  state: GameState,
+  node: NodeInstance,
+  rt?: NodeRuntime,
+  events: GameEvent[] = [],
+  traceLimit = Infinity,
+): boolean {
+  if (node.job || state.raidTimer > 0 || node.locked) return false;
   const t = targetById(node.targetId);
   if (!t || !canHack(state, node, t)) return false;
-  node.job = { targetId: t.id, progress: 0, required: t.security };
+  const trace = hackTrace(state, rt, t);
+  // Scripts: nur unter der Pausengrenze starten – und nie selbst eine Razzia auslösen
+  if (traceLimit < Infinity && (state.trace >= traceLimit || state.trace + trace >= 100)) return false;
+  const required = t.phases ? t.phases[0].amount : effectiveSecurity(state, t);
+  node.job = { targetId: t.id, progress: 0, required, phase: 0 };
+  addTrace(state, trace, events);
   return true;
 }
 
@@ -305,12 +449,15 @@ export function raid(state: GameState, events: GameEvent[]): void {
   state.trace = r.afterRaid;
   state.raidTimer = r.raidOfflineSeconds;
   state.run.raids++;
+  state.stats.raids++;
   events.push({ kind: 'raid', lostMoney, lostData, lostCrypto });
 }
 
 /** Wie viel ein Node an Daten aufnehmen kann. */
 function freeSpace(node: NodeInstance, rt: NodeRuntime): number {
-  if (isStorage(node) || node.type === 'market') return Math.max(0, rt.bufferCap - node.buffer);
+  if (isStorage(node) || node.type === 'market' || node.type === 'honeypot' || node.type === 'malware') {
+    return Math.max(0, rt.bufferCap - node.buffer);
+  }
   return 0;
 }
 
@@ -369,39 +516,36 @@ export function tick(
   flows: FlowMap = new Map(),
   opts: TickOptions = {},
 ): void {
-  const traceLimit = opts.scriptTraceLimit ?? Infinity;
+  const traceLimit = Math.min(opts.scriptTraceLimit ?? Infinity, CONFIG.trace.scriptPauseAt);
   const mods = getModifiers(state);
   state.run.playTime += dt;
   flows.clear();
+  state.stats.playTime += dt;
   if (state.raidTimer > 0) {
     state.raidTimer = Math.max(0, state.raidTimer - dt);
     if (state.raidTimer === 0) events.push({ kind: 'info', text: 'Systeme wieder online.', tone: 'ok' });
   }
+  if (state.blackout > 0) state.blackout = Math.max(0, state.blackout - dt);
+  for (const n of state.nodes) if (n.locked) n.locked = n.locked > dt ? n.locked - dt : undefined;
   computeRuntime(state, runtime, flows);
   const byId = new Map(state.nodes.map((n) => [n.id, n] as const));
   const idx = new ConnIndex(state.connections);
 
   // --- Hacks ---
-  for (const node of state.nodes) {
-    if (!isCompute(node)) continue;
+  const online = state.raidTimer <= 0;
+  const comps = state.nodes.filter(isCompute);
+  // Script-Rechner, die auf einen Start warten (faire Reihenfolge: längste Wartezeit zuerst)
+  const contested = comps.some((n) => !n.job && !n.locked && runtime.get(n.id)!.scripted);
+  for (const node of comps) {
     const rt = runtime.get(node.id)!;
-    if (state.raidTimer > 0) continue;
-    if (!node.job && rt.scripted && state.trace < traceLimit) {
-      const t = targetById(node.targetId);
-      if (t && !canHack(state, node, t)) rt.flags.add('ramLow');
-      else startHack(state, node);
-    }
-    if (!node.job) {
-      rt.flags.add('idle');
-      continue;
-    }
+    if (!online || node.locked || !node.job) continue;
     const t = targetById(node.job.targetId);
     if (!t) {
       node.job = null;
       continue;
     }
     // Mehrere Abschlüsse pro Tick möglich (wichtig für große Offline-Schritte)
-    let budget = Math.min(rt.power, t.security / CONFIG.minHackTime) * dt;
+    let budget = Math.min(rt.power, node.job.required / CONFIG.minHackTime) * dt;
     for (let guard = 0; node.job && budget > 0 && guard < 1000; guard++) {
       const need = node.job.required - node.job.progress;
       if (budget < need) {
@@ -410,11 +554,31 @@ export function tick(
       }
       budget -= need;
       const done = targetById(node.job.targetId)!;
+      const phase = node.job.phase ?? 0;
+      if (done.phases && phase + 1 < done.phases.length) {
+        // Nächste Phase braucht eine andere Ressource → Rest-Budget verfällt
+        node.job = { ...node.job, phase: phase + 1, progress: 0, required: done.phases[phase + 1].amount };
+        events.push({ kind: 'phase', nodeId: node.id, targetId: done.id, phase: phase + 1 });
+        break;
+      }
       node.job = null;
+      rt.waiting = 0;
       completeHack(state, node, rt, done, mods, events);
-      if (rt.scripted && state.raidTimer <= 0 && state.trace < traceLimit) startHack(state, node);
+      // Direkt weiter nur, wenn kein anderer Script-Rechner wartet
+      if (rt.scripted && !contested) startHack(state, node, rt, events, traceLimit);
     }
   }
+  const idle = comps
+    .filter((n) => !n.job && !n.locked && runtime.get(n.id)!.scripted)
+    .sort((a, b) => runtime.get(b.id)!.waiting - runtime.get(a.id)!.waiting);
+  for (const node of idle) {
+    const rt = runtime.get(node.id)!;
+    const t = targetById(node.targetId);
+    if (t && !canHack(state, node, t)) rt.flags.add('ramLow');
+    if (online && startHack(state, node, rt, events, traceLimit)) rt.waiting = 0;
+    else rt.waiting += dt;
+  }
+  for (const node of comps) if (!node.job) runtime.get(node.id)!.flags.add('idle');
 
   // --- Datenfluss: Rechner → Speicher → Markt ---
   for (const node of state.nodes) {
@@ -437,10 +601,9 @@ export function tick(
     const sold = Math.min(node.buffer, stat(node, 'sellRate') * dt);
     node.buffer -= sold;
     const income = sold * marketPrice(state, node, mods);
-    state.money += income;
-    state.run.money += income;
-    state.allTimeMoney += income;
+    earn(state, income);
     state.run.data += sold;
+    state.stats.dataSold += sold;
     rt.rate = income / dt;
     if (node.buffer >= rt.bufferCap * 0.999) rt.flags.add('overload');
   }
@@ -454,6 +617,19 @@ export function tick(
     state.crypto += perSec * dt;
     state.run.crypto += perSec * dt;
     rt.rate = perSec;
+  }
+
+  // --- Honeypots verbrauchen Köder-Daten ---
+  for (const node of state.nodes) {
+    if (node.type === 'honeypot') node.buffer = Math.max(0, node.buffer - stat(node, 'baitRate') * dt);
+  }
+
+  // --- Botnetze verlieren laufend Geräte ---
+  for (const node of state.nodes) {
+    if (node.type !== 'botnet') continue;
+    const d = (node.devices ?? 0) * Math.exp(-stat(node, 'decay') * dt);
+    node.devices = d < 0.5 ? 0 : d;
+    if (node.devices > state.stats.maxDevices) state.stats.maxDevices = node.devices;
   }
 
   // --- Trace: erst prüfen (Hacks können 100 % erreicht haben), dann abbauen ---

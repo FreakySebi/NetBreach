@@ -1,3 +1,4 @@
+import { CONFIG, type PhaseResource } from '../core/config';
 import { fmtMoney, fmt } from '../core/format';
 import type { Cost } from '../core/types';
 
@@ -38,6 +39,13 @@ export function costHtml(cost: Cost): string {
   const parts: string[] = [];
   if (cost.money) parts.push(`<span class="c-money">${fmtMoney(cost.money)}</span>`);
   if (cost.crypto) parts.push(`<span class="c-crypto">${fmt(cost.crypto)} ₿</span>`);
+  if (cost.models) parts.push(`<span class="c-models">${fmt(cost.models)} ◇</span>`);
   return parts.length ? parts.join(' + ') : '<span class="c-dim">gratis</span>';
 }
 
+
+export const PHASE_NAMES: Record<PhaseResource, string> = { ops: 'Rechenleistung', gpu: 'GPU', bandwidth: 'Bandbreite' };
+
+export function familyName(id: string): string {
+  return CONFIG.exploits.families.find((f) => f.id === id)?.name ?? '—';
+}

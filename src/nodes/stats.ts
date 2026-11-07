@@ -1,5 +1,6 @@
 import { CONFIG, type NodeConfig, type UpgradeConfig } from '../core/config';
 import { scaleCost } from '../core/economy';
+import { getModifiers } from '../core/state';
 import type { Cost, GameState, NodeInstance, NodeTypeId } from '../core/types';
 
 export function nodeConfig(type: NodeTypeId): NodeConfig {
@@ -49,14 +50,14 @@ export function countOf(state: GameState, type: NodeTypeId): number {
 
 export function nodePrice(state: GameState, type: NodeTypeId): Cost {
   const cfg = nodeConfig(type);
-  return scaleCost(cfg.cost, cfg.growth, countOf(state, type));
+  return scaleCost(cfg.cost, cfg.growth, countOf(state, type), getModifiers(state).nodeCost);
 }
 
 /** Gesamtwert, der in einen Node investiert wurde (Kaufpreis + Upgrades). */
 export function investedValue(state: GameState, node: NodeInstance): Cost {
   const cfg = nodeConfig(node.type);
   const base = scaleCost(cfg.cost, cfg.growth, Math.max(0, countOf(state, node.type) - 1));
-  const total: Cost = { money: base.money ?? 0, crypto: base.crypto ?? 0 };
+  const total: Cost = { money: base.money ?? 0, crypto: base.crypto ?? 0, models: base.models ?? 0 };
   for (const u of cfg.upgrades) {
     const lvl = node.levels[u.id] ?? 0;
     for (let i = 0; i < lvl; i++) {

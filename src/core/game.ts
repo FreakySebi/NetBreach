@@ -3,7 +3,7 @@ import { canAfford, pay, refund } from './economy';
 import { simulateOffline, type OfflineReport } from './offline';
 import { clearStorage, deserialize, loadFromStorage, saveToStorage, serialize } from './save';
 import { createInitialState, getModifiers, pendingTokens, perkLevel, prestigeReset } from './state';
-import { computeRuntime, isCompute, startHack, targetById, tick, type FlowMap, type RuntimeMap } from './simulation';
+import { canHack, computeRuntime, earn, isCompute, startHack, targetById, tick, type FlowMap, type RuntimeMap } from './simulation';
 import type { GameEvent, GameState, NodeInstance, NodeTypeId } from './types';
 import { NODE_DEFS, PORT_NAMES, portDef } from '../nodes/definitions';
 import { countOf, hasConfig, investedValue, nodeConfig, nodePrice, stat, upgradeCost, upgradeMaxed } from '../nodes/stats';
@@ -63,6 +63,15 @@ export class Game {
     if (this.sinceSave >= CONFIG.autosaveSeconds) this.save();
   }
 
+  /** Simuliert `seconds` mit grober Schrittweite (Balancing-Bot, Tests). Events werden ausgelöst. */
+  advance(seconds: number, dt: number): void {
+    const events: GameEvent[] = [];
+    for (let left = seconds; left > 1e-9; left -= dt) {
+      tick(this.state, this.runtime, Math.min(dt, left), events, this.flows);
+    }
+    for (const e of events) this.emit(e);
+  }
+
   node(id: number): NodeInstance | undefined {
     return this.state.nodes.find((n) => n.id === id);
   }
@@ -90,10 +99,9 @@ export class Game {
     const node = this.node(nodeId);
     if (!node || node.type !== 'job') return;
     const amount = stat(node, 'reward') * getModifiers(this.state).click;
-    this.state.money += amount;
-    this.state.run.money += amount;
-    this.state.allTimeMoney += amount;
+    earn(this.state, amount);
     this.state.run.clicks++;
+    this.state.stats.clicks++;
     this.emit({ kind: 'click', amount });
   }
 
@@ -109,8 +117,7 @@ export class Game {
 
   /** Schwierigstes Ziel, das ein Rechner gerade hacken kann. */
   bestTargetFor(node: NodeInstance): string | undefined {
-    const ram = stat(node, 'ram');
-    const ok = CONFIG.targets.filter((t) => this.state.reputation >= t.reqRep && ram >= t.ram);
+    const ok = CONFIG.targets.filter((t) => !t.phases && !t.rival && canHack(this.state, node, t));
     return ok[ok.length - 1]?.id;
   }
 
@@ -150,7 +157,11 @@ export class Game {
 
   startHack(nodeId: number): boolean {
     const node = this.node(nodeId);
-    return !!node && startHack(this.state, node);
+    if (!node) return false;
+    const events: GameEvent[] = [];
+    const ok = startHack(this.state, node, this.runtime.get(node.id), events);
+    for (const e of events) this.emit(e);
+    return ok;
   }
 
   /** Maximale Kabelanzahl an einem Port. */

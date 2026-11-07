@@ -1,12 +1,12 @@
 import { CONFIG } from '../core/config';
 import type { Game } from '../core/game';
 import { fmt, fmtBytes, fmtMoney, fmtPct, fmtTime } from '../core/format';
-import { canHack, hackPower, heatLoad, isCompute, isStorage, marketPrice, powerDemand, targetUnlocked } from '../core/simulation';
+import { canHack, estimateHackTime, heatLoad, isCompute, isStorage, marketPrice, powerDemand, targetById, targetUnlocked } from '../core/simulation';
 import { getModifiers } from '../core/state';
 import type { NodeInstance } from '../core/types';
 import { NODE_DEFS, PORT_COLORS, PORT_NAMES } from '../nodes/definitions';
 import { nodeConfig, stat, statAfterUpgrade, upgradeCost, upgradeMaxed } from '../nodes/stats';
-import { costHtml, delegate, esc, HtmlView } from './dom';
+import { costHtml, delegate, esc, HtmlView, PHASE_NAMES } from './dom';
 import type { UIState } from './uistate';
 
 export interface InspectorHooks {
@@ -136,15 +136,20 @@ export class Inspector {
       .filter((t) => targetUnlocked(s, t))
       .map((t) => {
         const ok = canHack(s, node, t);
-        const p = hackPower(node, rt, t, mods);
-        const dur = p > 0 ? Math.max(CONFIG.minHackTime, t.security / p) : Infinity;
+        const dur = estimateHackTime(s, node, rt, t, mods);
         const active = node.targetId === t.id;
         return `<button class="target ${active ? 'active' : ''}" data-action="target" data-id="${t.id}" ${ok ? '' : 'disabled'}
           title="${ok ? '' : 'Zu wenig RAM (' + t.ram + ' GB nötig)'}">
           <span>${esc(t.name)}</span><small>${ok ? fmtTime(dur) : t.ram + ' GB RAM'}</small></button>`;
       });
-    const canStart = !node.job && !rt.scripted && s.raidTimer <= 0;
-    return `<h4>Ziel</h4><div class="targets">${list.join('')}</div>
+    const canStart = !node.job && !rt.scripted && s.raidTimer <= 0 && !node.locked;
+    let phaseInfo = '';
+    const jt = node.job ? targetById(node.job.targetId) : undefined;
+    if (node.job && jt?.phases) {
+      const ph = jt.phases[node.job.phase ?? 0];
+      phaseInfo = `<p class="hint">Phase ${(node.job.phase ?? 0) + 1}/${jt.phases.length}: <b>${esc(ph.name)}</b> – braucht ${PHASE_NAMES[ph.resource]}.</p>`;
+    }
+    return `<h4>Ziel</h4>${phaseInfo}<div class="targets">${list.join('')}</div>
       <div class="row"><button class="primary" data-action="hack" ${canStart ? '' : 'disabled'}>▶ Hack starten</button></div>`;
   }
 }

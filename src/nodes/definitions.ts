@@ -11,7 +11,7 @@ export interface PortDef {
   maxStat?: string;
 }
 
-export type NodeCategory = 'job' | 'compute' | 'module' | 'network' | 'storage' | 'market' | 'power' | 'security' | 'automation';
+export type NodeCategory = 'job' | 'compute' | 'module' | 'network' | 'storage' | 'market' | 'power' | 'security' | 'automation' | 'infect';
 
 export interface NodeDef {
   category: NodeCategory;
@@ -31,6 +31,7 @@ export const PORT_COLORS: Record<PortKind, string> = {
   accel: '#ff4fd8',
   proxy: '#b388ff',
   script: '#ff9f40',
+  bot: '#c6ff00',
 };
 
 export const PORT_NAMES: Record<PortKind, string> = {
@@ -41,6 +42,7 @@ export const PORT_NAMES: Record<PortKind, string> = {
   accel: 'GPU',
   proxy: 'Proxy',
   script: 'Script',
+  bot: 'Botnetz',
 };
 
 export const CATEGORY_COLORS: Record<NodeCategory, string> = {
@@ -53,6 +55,7 @@ export const CATEGORY_COLORS: Record<NodeCategory, string> = {
   power: '#ffd23f',
   security: '#b388ff',
   automation: '#ff9f40',
+  infect: '#c6ff00',
 };
 
 const P = {
@@ -70,10 +73,12 @@ const P = {
   proxyOut: { id: 'proxyOut', kind: 'proxy', label: 'Proxy', dir: 'out', max: 1 },
   scriptIn: { id: 'scriptIn', kind: 'script', label: 'Script', dir: 'in' },
   scriptOut: { id: 'scriptOut', kind: 'script', label: 'Script', dir: 'out', maxStat: 'slots' },
+  botIn: { id: 'botIn', kind: 'bot', label: 'Botnetz', dir: 'in', max: 4 },
+  botOut: { id: 'botOut', kind: 'bot', label: 'Bots', dir: 'out', maxStat: 'slots' },
 } satisfies Record<string, PortDef>;
 
-const laptopPorts: PortDef[] = [P.coolIn, P.netIn, P.accelIn, P.proxyIn, P.scriptIn, P.dataOut];
-const computePorts: PortDef[] = [P.powerIn, P.coolIn, P.netIn, P.accelIn, P.proxyIn, P.scriptIn, P.dataOut];
+const laptopPorts: PortDef[] = [P.coolIn, P.netIn, P.accelIn, P.botIn, P.proxyIn, P.scriptIn, P.dataOut];
+const computePorts: PortDef[] = [P.powerIn, P.coolIn, P.netIn, P.accelIn, P.botIn, P.proxyIn, P.scriptIn, P.dataOut];
 
 export const NODE_DEFS: Record<NodeTypeId, NodeDef> = {
   job: { category: 'job', icon: '$', ports: [], lines: 2, button: 'ARBEITEN' },
@@ -93,6 +98,11 @@ export const NODE_DEFS: Record<NodeTypeId, NodeDef> = {
   vpn: { category: 'security', icon: '⛨', ports: [P.proxyIn, P.proxyOut], lines: 2 },
   proxy: { category: 'security', icon: '⛨', ports: [P.proxyIn, P.proxyOut], lines: 2 },
   script: { category: 'automation', icon: '⌘', ports: [P.scriptOut], lines: 2 },
+  quantum: { category: 'compute', icon: '⚛', ports: computePorts, lines: 4, bar: true, button: 'HACK' },
+  firewall: { category: 'security', icon: '▥', ports: [P.powerIn, P.coolIn], lines: 2 },
+  honeypot: { category: 'security', icon: '◎', ports: [P.powerIn, P.dataIn], lines: 2, bar: true },
+  botnet: { category: 'infect', icon: '☣', ports: [P.botOut], lines: 2, bar: true },
+  malware: { category: 'module', icon: '⚗', ports: [P.powerIn, P.coolIn, P.accelIn, P.dataIn], lines: 3, bar: true },
 };
 
 // ---------- Layout ----------

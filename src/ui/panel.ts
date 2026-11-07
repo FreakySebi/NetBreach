@@ -2,11 +2,11 @@ import { CONFIG, type ResearchConfig } from '../core/config';
 import { canAfford } from '../core/economy';
 import type { Game } from '../core/game';
 import { fmt, fmtBytes, fmtMoney, fmtPct, fmtTime } from '../core/format';
-import { targetUnlocked } from '../core/simulation';
+import { lockReason, targetWork } from '../core/simulation';
 import type { NodeTypeId } from '../core/types';
 import { NODE_DEFS, CATEGORY_COLORS } from '../nodes/definitions';
 import { nodeConfig, nodePrice } from '../nodes/stats';
-import { costHtml, delegate, esc, HtmlView } from './dom';
+import { costHtml, delegate, esc, familyName, HtmlView, PHASE_NAMES } from './dom';
 
 export interface PanelHooks {
   buy(type: NodeTypeId): void;
@@ -139,18 +139,33 @@ export class Panel {
     const s = this.game.state;
     const sel = this.hooks.selectedCompute();
     const rows = CONFIG.targets.map((t) => {
-      const open = targetUnlocked(s, t);
-      if (!open) {
+      const reason = lockReason(s, t);
+      if (reason) {
+        if (t.rival) return '';
         return `<div class="card locked"><div class="card-head"><span>🔒 ${esc(t.name)}</span></div>
-          <div class="card-desc">Benötigt ${fmt(t.reqRep)} Reputation</div></div>`;
+          <div class="card-desc">${esc(reason)}</div></div>`;
       }
-      return `<div class="card" style="--accent:#00e5ff">
-        <div class="card-head"><span>${esc(t.name)}</span><span class="c-dim">SEC ${fmt(t.security)}</span></div>
-        <div class="card-desc">${esc(t.desc)}</div>
+      const work = targetWork(s, t);
+      const phases = t.phases
+        ? `<div class="phases">${t.phases
+            .map((p, i) => `<span>${i + 1}. ${esc(p.name)} <small>(${PHASE_NAMES[p.resource]} ${p.resource === 'bandwidth' ? fmtBytes(p.amount) : fmt(p.amount)})</small></span>`)
+            .join('')}</div>`
+        : '';
+      const special = [
+        t.effect === 'blackout' ? '<span class="tag warn">Blackout</span>' : '',
+        t.models ? `<span class="tag">+${fmt(t.models)} Modelle</span>` : '',
+        t.botnet ? `<span class="tag lime">+${fmt(t.botnet)} Bots</span>` : '',
+        t.rival ? '<span class="tag bad">Rivale</span>' : '',
+        t.trace >= 50 ? '<span class="tag bad">Extremer Trace</span>' : '',
+      ].join('');
+      return `<div class="card" style="--accent:${t.rival ? '#ff4d6d' : '#00e5ff'}">
+        <div class="card-head"><span>${esc(t.name)}</span><span class="c-dim">SEC ${fmt(work)}</span></div>
+        <div class="card-desc">${esc(t.desc)}</div>${special ? `<div class="tags">${special}</div>` : ''}${phases}
         <div class="kv"><span>RAM</span><b>${fmt(t.ram)} GB</b><span>Beute</span><b class="c-money">${fmtMoney(t.money)}</b>
         <span>Daten</span><b class="c-data">${fmtBytes(t.data)}</b><span>Ruf</span><b class="c-rep">+${fmt(t.rep)}</b>
         ${t.crypto ? `<span>Krypto</span><b class="c-crypto">${fmt(t.crypto)} ₿</b>` : ''}
-        <span>Trace</span><b class="c-bad">+${fmt(t.trace)} %</b><span>Dauer @1 OPS</span><b>${fmtTime(t.security)}</b></div>
+        <span>Trace</span><b class="c-bad">+${fmt(t.trace)} %</b>
+        <span>Exploit-Familie</span><b>${esc(familyName(t.family))}</b></div>
         <div class="row">
           <button data-action="target-sel" data-id="${t.id}" ${sel === null ? 'disabled' : ''}>Für Auswahl</button>
           <button data-action="target-all" data-id="${t.id}">Für alle Rechner</button>

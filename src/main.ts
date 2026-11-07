@@ -205,10 +205,22 @@ game.on((e) => {
       const n = game.node(e.nodeId);
       if (!n) break;
       const lay = layoutOf(n.type);
-      const text = '+' + fmtMoney(e.money) + (e.crypto > 0 ? `  +${fmt(e.crypto, 3)} ₿` : '');
+      const text = '+' + fmtMoney(e.money) + (e.crypto > 0 ? `  +${fmt(e.crypto, 3)} ₿` : '') + (e.models > 0 ? `  +${fmt(e.models)} ◇` : '');
+      if (targetById(e.targetId)?.phases) toasts.show('DER KERN IST GEKNACKT!', 'ok', 10000);
       ui.addFloating(n.x + lay.w / 2, n.y - 4, text, '#39ff88');
       const t = targetById(e.targetId);
       if (game.state.run.hacks === 1 && t) toasts.show(`Erster Hack erfolgreich: ${t.name}!`, 'ok');
+      break;
+    }
+    case 'phase': {
+      const t = targetById(e.targetId);
+      const ph = t?.phases?.[e.phase];
+      if (ph) toasts.show(`${t!.name}: Phase ${e.phase + 1} – ${ph.name}`, 'info', 5000);
+      break;
+    }
+    case 'achievement': {
+      const a = CONFIG.achievements.find((x) => x.id === e.id);
+      if (a) toasts.show(`🏆 Erfolg: ${a.name}`, 'ok', 6000);
       break;
     }
     case 'raid':

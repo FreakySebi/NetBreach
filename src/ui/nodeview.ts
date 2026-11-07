@@ -1,7 +1,8 @@
 import type { Game } from '../core/game';
 import { CONFIG } from '../core/config';
 import { fmt, fmtBytes, fmtMoney, fmtPct, fmtTime } from '../core/format';
-import { canHack, marketPrice, targetById } from '../core/simulation';
+import { canHack, estimateHackTime, hackTrace, marketPrice, targetById } from '../core/simulation';
+import { PHASE_NAMES } from './dom';
 import { getModifiers } from '../core/state';
 import type { NodeFlag, NodeInstance } from '../core/types';
 import { stat } from '../nodes/stats';
@@ -34,9 +35,12 @@ const FLAG_TEXT: Partial<Record<NodeFlag, string>> = {
   ramLow: 'ZU WENIG RAM',
   overload: 'ÜBERLASTET',
   raided: 'BESCHLAGNAHMT',
+  blackout: 'BLACKOUT',
+  locked: 'GESPERRT',
+  noBait: 'KEIN KÖDER',
 };
 
-const ALERT_FLAGS: NodeFlag[] = ['bufferFull', 'storageFull', 'noPower', 'overheat', 'overload', 'raided'];
+const ALERT_FLAGS: NodeFlag[] = ['bufferFull', 'storageFull', 'noPower', 'overheat', 'overload', 'raided', 'blackout', 'locked'];
 
 function problemLine(flags: Set<NodeFlag>, alert: boolean): Line | null {
   const problems = [...flags].map((f) => FLAG_TEXT[f]).filter(Boolean);
@@ -61,29 +65,35 @@ export function describeNode(game: Game, node: NodeInstance): NodeView {
     }
     case 'laptop':
     case 'pc':
-    case 'server': {
+    case 'server':
+    case 'quantum': {
       const t = targetById(node.job?.targetId ?? node.targetId);
       const power = rt?.power ?? 0;
-      view.lines.push({ text: `${fmt(stat(node, 'cores'))} Kerne · ${fmt(stat(node, 'clock'))} GHz · ${fmt(stat(node, 'ram'))} GB` });
-      view.lines.push({ text: `Ziel: ${t ? t.name : '—'}`, color: '#00e5ff' });
-      const dur = t && power > 0 ? t.security / power : Infinity;
+      view.lines.push({ text: `${fmt(stat(node, 'cores'))} ${node.type === 'quantum' ? 'Qubits' : 'Kerne'} · ${fmt(stat(node, 'clock'))} GHz · ${fmt(stat(node, 'ram'))} GB` });
+      const phase = node.job?.phase ?? 0;
+      const phaseText = t?.phases ? ` · Phase ${phase + 1}/${t.phases.length} ${PHASE_NAMES[t.phases[phase].resource]}` : '';
+      view.lines.push({ text: `Ziel: ${t ? t.name : '—'}${phaseText}`, color: t?.phases ? '#ff4fd8' : '#00e5ff' });
+      const dur = node.job ? (node.job.required - node.job.progress) / Math.max(power, 1e-9) : t && rt ? estimateHackTime(state, node, rt, t, getModifiers(state)) : Infinity;
       const fill = node.buffer / Math.max(1, rt?.bufferCap ?? 1);
       const bufText = fill > 0.5 ? ` · Puffer ${Math.round(fill * 100)}%` : '/Hack';
-      view.lines.push({ text: `${fmt(power)} OPS · ${fmtTime(dur)}${bufText}`, color: fill > 0.9 ? C_WARN : C_DIM });
+      const unit = t?.phases?.[phase]?.resource === 'bandwidth' ? 'MB/s' : 'OPS';
+      view.lines.push({ text: `${fmt(power)} ${unit} · ${fmtTime(dur)}${bufText}`, color: fill > 0.9 ? C_WARN : C_DIM });
       view.lines.push(
         problemLine(flags, alert) ?? {
           text: `${Math.round(rt?.temperature ?? 30)}°C · ${fmtBytes(rt?.bandwidth ?? 0)}/s · ${rt && rt.stealth > 0 ? 'Tarnung ' + fmtPct(rt.stealth) : 'ungetarnt'}`,
           color: C_DIM,
         },
       );
-      const ok = !!t && canHack(state, node, t) && state.raidTimer <= 0;
+      const ok = !!t && canHack(state, node, t) && state.raidTimer <= 0 && !node.locked;
       if (node.job) {
         const ratio = node.job.progress / node.job.required;
         view.bar = { ratio, color: '#39ff88' };
         view.button = { label: rt?.scripted ? 'AUTO-HACK LÄUFT' : `HACKT… ${Math.floor(ratio * 100)}%`, enabled: false };
+        if (t?.phases) view.bar.color = '#ff4fd8';
       } else {
         view.bar = { ratio: 0, color: '#39ff88' };
-        view.button = { label: rt?.scripted ? 'AUTO: WARTET' : '▶ HACK STARTEN', enabled: ok && !rt?.scripted };
+        const paused = rt?.scripted && t && (state.trace >= CONFIG.trace.scriptPauseAt || state.trace + hackTrace(state, rt, t) >= 100);
+        view.button = { label: paused ? '⏸ TRACE-PAUSE' : rt?.scripted ? 'AUTO: WARTET' : '▶ HACK STARTEN', enabled: ok && !rt?.scripted };
       }
       break;
     }
@@ -143,6 +153,35 @@ export function describeNode(game: Game, node: NodeInstance): NodeView {
       view.lines.push({ text: `Eigene Tarnung ${fmtPct(stat(node, 'stealth'))}` });
       view.lines.push({ text: `Kette gesamt ${fmtPct(rt?.stealth ?? 0)}`, color: '#b388ff' });
       break;
+    case 'firewall':
+      view.lines.push({ text: `Abwehr ${fmt(rt?.power ?? 0)}` });
+      view.lines.push(problemLine(flags, alert) ?? { text: `${fmt(rt?.demand ?? 0)} W · ${Math.round(rt?.temperature ?? 30)}°C`, color: C_DIM });
+      break;
+    case 'honeypot': {
+      const cap = rt?.bufferCap ?? 1;
+      view.lines.push({ text: `Lockwert ${fmt(rt?.power ?? 0)} · Köder ${fmtBytes(stat(node, 'baitRate'))}/s` });
+      view.lines.push(problemLine(flags, alert) ?? { text: `Rückverfolgung ${Math.floor(state.rival.track)} %`, color: '#b388ff' });
+      view.bar = { ratio: node.buffer / cap, color: '#b388ff', label: `Köder ${fmtBytes(node.buffer)}` };
+      view.alert = flags.has('noPower') || flags.has('locked');
+      view.warn = flags.has('noBait');
+      break;
+    }
+    case 'botnet': {
+      const cap = rt?.bufferCap ?? 1;
+      const dev = node.devices ?? 0;
+      view.lines.push({ text: `${fmt(dev, 0)} Geräte · ${fmt(rt?.power ?? 0)} OPS`, color: '#c6ff00' });
+      view.lines.push(problemLine(flags, alert) ?? { text: `Verlust ${fmtPct(stat(node, 'decay') * 60)}/min · ${rt?.load ?? 0} Ziele`, color: C_DIM });
+      view.bar = { ratio: dev / cap, color: '#c6ff00', label: `${fmt(dev, 0)} / ${fmt(cap, 0)}` };
+      break;
+    }
+    case 'malware': {
+      const fam = CONFIG.exploits.families.find((f) => f.id === node.craft);
+      view.lines.push({ text: `Baut: ${fam ? fam.name + '-Exploit' : '—'}`, color: '#ff4fd8' });
+      view.lines.push({ text: `${fmt(rt?.power ?? 0)} OPS · Daten ${fmtBytes(node.buffer)}`, color: C_DIM });
+      view.lines.push(problemLine(flags, alert) ?? { text: `Lager: ${fam ? fmt(state.exploits[fam.id] ?? 0) : 0} Stück` });
+      view.bar = { ratio: fam ? (node.craftProgress ?? 0) / fam.ops : 0, color: '#ff4fd8' };
+      break;
+    }
     case 'script': {
       const slots = Math.floor(stat(node, 'slots'));
       view.lines.push({ text: `Verbunden: ${rt?.load ?? 0} / ${slots} Rechner` });
