@@ -722,3 +722,78 @@ button.wide {
   font-size: 16px;
   text-align: center;
 }
+
+/* ---------- Terminal-Minispiel ---------- */
+
+.modal.terminal {
+  min-width: 420px;
+  background: #020403;
+}
+.term-log {
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 8px;
+}
+.term-log .ok {
+  color: var(--green);
+}
+.term-log .cur {
+  color: var(--cyan);
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.6);
+}
+.term-log .todo {
+  color: var(--dim);
+}
+.term-log .bad {
+  color: var(--red);
+}
+.term-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.prompt {
+  color: var(--green);
+  font-size: 12px;
+}
+.term-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--green);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  outline: none;
+  padding: 3px 0;
+}
+.term-input.shake {
+  animation: shake 0.3s;
+  border-color: var(--red);
+}
+.term-time {
+  height: 4px;
+  background: #1a0f12;
+  margin: 10px 0 4px;
+}
+.term-time div {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, var(--red), var(--yellow), var(--green));
+}
+.modal.win {
+  border-color: var(--green);
+  box-shadow: 0 0 40px rgba(57, 255, 136, 0.5);
+}
+.modal.lose {
+  border-color: var(--red);
+  box-shadow: 0 0 40px rgba(255, 77, 109, 0.5);
+}
+@keyframes shake {
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}

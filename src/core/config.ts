@@ -569,7 +569,7 @@ export const CONFIG = {
       desc: 'Infizierte Geräte als Rechenquelle. Wächst durch Hacks auf Webcams und Smart-Homes, verliert aber laufend Geräte.',
       cost: { money: 8000 },
       growth: 1.6,
-      stats: { capacity: 400, opsPerDevice: 0.05, spread: 1, decay: 0.002, slots: 2 },
+      stats: { capacity: 400, opsPerDevice: 0.05, spread: 1, decay: 0.0005, slots: 2 },
       upgrades: [
         { id: 'cap', label: 'C&C-Server ×2', stat: 'capacity', mode: 'mul', amount: 2, cost: { money: 5000 }, growth: 1.9, max: 20 },
         { id: 'ops', label: 'Payload +30 %', stat: 'opsPerDevice', mode: 'mul', amount: 1.3, cost: { money: 8000 }, growth: 1.8, max: 20 },

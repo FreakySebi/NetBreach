@@ -13,6 +13,7 @@ import { esc } from './ui/dom';
 import { Hud } from './ui/hud';
 import { Input } from './ui/input';
 import { Inspector } from './ui/inspector';
+import { openMinigame } from './ui/minigame';
 import { Panel } from './ui/panel';
 import { Renderer } from './ui/renderer';
 import { showModal, Toasts } from './ui/toast';
@@ -208,6 +209,15 @@ const inspector = new Inspector($('inspector'), game, ui, {
   },
   hack(nodeId) {
     game.startHack(nodeId);
+  },
+  minigame(nodeId) {
+    const n = game.node(nodeId);
+    const t = n?.job ? targetById(n.job.targetId) : undefined;
+    if (!n || !t || !game.canMinigame(nodeId)) return;
+    openMinigame(t.name, (success) => {
+      game.minigameResult(nodeId, success);
+      toasts.show(success ? 'Aktiver Hack erfolgreich – Restzeit stark verkürzt!' : `Entdeckt! Trace +${CONFIG.minigame.tracePenalty} %`, success ? 'ok' : 'bad');
+    });
   },
 });
 

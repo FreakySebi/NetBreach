@@ -13,6 +13,7 @@ import type { UIState } from './uistate';
 export interface InspectorHooks {
   sell(nodeId: number): void;
   hack(nodeId: number): void;
+  minigame(nodeId: number): void;
 }
 
 export class Inspector {
@@ -32,6 +33,7 @@ export class Inspector {
       if (action === 'target') this.game.setTarget(id, data.id!);
       if (action === 'craft') this.game.setCraft(id, data.id!);
       if (action === 'hack') this.hooks.hack(id);
+      if (action === 'minigame') this.hooks.minigame(id);
       if (action === 'sell') this.hooks.sell(id);
       if (action === 'close') this.ui.selectedNode = null;
       this.update();
@@ -186,7 +188,10 @@ export class Inspector {
       const ph = jt.phases[node.job.phase ?? 0];
       phaseInfo = `<p class="hint">Phase ${(node.job.phase ?? 0) + 1}/${jt.phases.length}: <b>${esc(ph.name)}</b> – braucht ${PHASE_NAMES[ph.resource]}.</p>`;
     }
+    const mini = this.game.canMinigame(node.id)
+      ? `<button class="primary" data-action="minigame" title="Optional: Befehle abtippen für einen schnelleren Hack">⌨ Aktiv hacken</button>`
+      : '';
     return `<h4>Ziel</h4>${phaseInfo}<div class="targets">${list.join('')}</div>
-      <div class="row"><button class="primary" data-action="hack" ${canStart ? '' : 'disabled'}>▶ Hack starten</button></div>`;
+      <div class="row"><button class="primary" data-action="hack" ${canStart ? '' : 'disabled'}>▶ Hack starten</button>${mini}</div>`;
   }
 }

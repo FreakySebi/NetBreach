@@ -2,7 +2,8 @@ import type { Game } from '../core/game';
 import { CONFIG } from '../core/config';
 import { canAfford } from '../core/economy';
 import { fmt, fmtMoney } from '../core/format';
-import { isCompute, isStorage } from '../core/simulation';
+import { isCompute, isStorage, targetUnlocked } from '../core/simulation';
+import { defenseRating } from '../core/systems/rivals';
 import { nodePrice } from '../nodes/stats';
 
 /** Kurzer Hinweis, was der Spieler als Nächstes tun kann (Mini-Tutorial). */
@@ -13,6 +14,15 @@ export function nextObjective(game: Game): string {
   const computers = s.nodes.filter(isCompute);
 
   if (s.raidTimer > 0) return 'Razzia! Warte, bis die Systeme wieder online sind.';
+  if (s.rival.warning) {
+    const def = defenseRating(s, game.runtime);
+    return def >= s.rival.warning.strength
+      ? `Rivalen-Angriff in ${Math.ceil(s.rival.warning.left)} s – deine Abwehr hält.`
+      : `Rivalen-Angriff in ${Math.ceil(s.rival.warning.left)} s! Abwehr ${fmt(def)} < ${fmt(s.rival.warning.strength)} – Firewall ausbauen.`;
+  }
+  if (s.rival.located) return 'Honeypots haben den Rivalen geortet – hacke das „Rivalen-Netz“!';
+  const core = CONFIG.targets.find((t) => t.phases);
+  if (core && targetUnlocked(s, core) && !s.stats.coreCracks) return 'Der Kern ist angreifbar: 3 Phasen – Rechenleistung, GPU, Bandbreite.';
   if (computers.length === 0) {
     const price = nodePrice(s, 'laptop').money ?? 0;
     return canAfford(s, { money: price })

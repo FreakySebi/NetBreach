@@ -6,7 +6,7 @@ import { buyCrypto, sellCrypto } from './systems/crypto';
 import { exploitAutoOn, familyById } from './systems/exploits';
 import { clearStorage, deserialize, loadFromStorage, saveToStorage, serialize } from './save';
 import { collectiveLevel, collectiveReset, createInitialState, getModifiers, pendingShares, pendingTokens, perkLevel, prestigeReset } from './state';
-import { canHack, computeRuntime, earn, isCompute, startHack, targetById, tick, type FlowMap, type RuntimeMap } from './simulation';
+import { addTrace, canHack, computeRuntime, earn, isCompute, startHack, targetById, tick, type FlowMap, type RuntimeMap } from './simulation';
 import type { GameEvent, GameState, NodeInstance, NodeTypeId } from './types';
 import { NODE_DEFS, PORT_NAMES, portDef } from '../nodes/definitions';
 import { countOf, hasConfig, investedValue, nodeConfig, nodePrice, stat, upgradeCost, upgradeMaxed } from '../nodes/stats';
@@ -165,6 +165,30 @@ export class Game {
     const ok = startHack(this.state, node, this.runtime.get(node.id), events);
     for (const e of events) this.emit(e);
     return ok;
+  }
+
+  // ---------- Terminal-Minispiel ----------
+
+  /** Minispiel nur bei laufenden, manuellen Hacks mit genug Restzeit – einmal pro Hack. */
+  canMinigame(nodeId: number): boolean {
+    const node = this.node(nodeId);
+    const rt = node && this.runtime.get(node.id);
+    if (!node?.job || !rt || node.job.minigame || rt.scripted || rt.power <= 0) return false;
+    return (node.job.required - node.job.progress) / rt.power >= CONFIG.minigame.minSecondsLeft;
+  }
+
+  minigameResult(nodeId: number, success: boolean): void {
+    const node = this.node(nodeId);
+    if (!node?.job || node.job.minigame) return;
+    node.job.minigame = true;
+    if (success) {
+      node.job.progress += (node.job.required - node.job.progress) * CONFIG.minigame.progressBonus;
+      this.state.stats.minigames++;
+    } else {
+      const events: GameEvent[] = [];
+      addTrace(this.state, CONFIG.minigame.tracePenalty, events);
+      for (const e of events) this.emit(e);
+    }
   }
 
   // ---------- Aufträge ----------
