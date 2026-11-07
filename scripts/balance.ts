@@ -7,9 +7,10 @@ import { CONFIG, type TargetConfig } from '../src/core/config';
 import { canAfford } from '../src/core/economy';
 import { fmt, fmtMoney, fmtTime } from '../src/core/format';
 import { Game } from '../src/core/game';
-import { canHack, estimateHackTime, hackTrace, isCompute, isStorage, marketPrice, powerDemand, targetUnlocked } from '../src/core/simulation';
+import { canHack, computeRuntime, estimateHackTime, hackTrace, isCompute, isStorage, marketPrice, powerDemand, targetUnlocked } from '../src/core/simulation';
 import { getModifiers } from '../src/core/state';
 import { familyById } from '../src/core/systems/exploits';
+import { defenseRating, rivalStrength } from '../src/core/systems/rivals';
 import type { Cost, NodeInstance, NodeTypeId } from '../src/core/types';
 import { nodeConfig, nodePrice, stat, upgradeCost, upgradeMaxed } from '../src/nodes/stats';
 
@@ -46,10 +47,13 @@ game.on((e) => {
   if (e.kind === 'raid') raidsInRun++;
   if (e.kind === 'exploit') exploitsMade += e.count;
   if (e.kind === 'contract') contractStats[e.success ? 'ok' : 'fail']++;
+  if (e.kind === 'rivalAttack') rivalStats[e.repelled ? 'ok' : 'fail']++;
+  if (e.kind === 'rivalAttack' && e.text.includes('geortet')) log('⌖ Rivale geortet');
 });
 let raidsInRun = 0;
 let exploitsMade = 0;
 const contractStats = { ok: 0, fail: 0 };
+const rivalStats = { ok: 0, fail: 0 };
 
 // ---------- Hilfen ----------
 
@@ -144,7 +148,14 @@ function infrastructure(): void {
   }
   // Sicherheit: Firewall ab mittlerem Spielfortschritt, Honeypot mit Köder-Daten aus einem Speicher
   if (game.isUnlocked('firewall') && !nodes('firewall').length) buy('firewall');
-  for (const fw of nodes('firewall')) upg(fw, 'def', 0.1);
+  // Abwehr mit Reserve über der aktuellen Rivalen-Stärke halten
+  const wantDefense = rivalStrength(s()) * 1.3;
+  for (let guard = 0; guard < 5 && defenseRating(s(), game.runtime) < wantDefense; guard++) {
+    const fw = nodes('firewall').find((f) => upg(f, 'def', 0.4));
+    if (!fw && !buy('firewall')) break;
+    game.advance(0, 0.1);
+    computeRuntime(s(), game.runtime);
+  }
   if (game.isUnlocked('honeypot') && !nodes('honeypot').length) buy('honeypot');
   for (const hp of nodes('honeypot')) {
     const store = nodes().find(isStorage);
@@ -395,7 +406,8 @@ for (const t of CONFIG.targets) {
   const f = (x?: { time: number; run: number }) => (x ? `${fmtTime(x.time).padStart(8)} (L${x.run})` : '       —     ');
   console.log(`  ${t.name.padEnd(24)} ${f(u)}   ${f(h)}`);
 }
-console.log(`\nAufträge: ${contractStats.ok} erfüllt, ${contractStats.fail} gescheitert`);
+console.log(`\nRivalen-Angriffe: ${rivalStats.ok} abgewehrt, ${rivalStats.fail} erfolgreich · Rivalen besiegt: ${s().stats.rivalsBeaten}`);
+console.log(`Aufträge: ${contractStats.ok} erfüllt, ${contractStats.fail} gescheitert`);
 console.log(`Exploits hergestellt: ${exploitsMade} · Krypto verkauft: ${fmt(s().stats.cryptoSold, 1)} ₿ · Kurs am Ende: ${fmtMoney(s().market.price)}`);
 console.log(`Forschung jemals: ${seenResearch.size}/${CONFIG.research.length} · Identitäten: ${s().prestige.identities} · Razzien gesamt: ${s().stats.raids}`);
 console.log(coreCrackedAt ? `Der Kern: geknackt nach ${fmtTime(coreCrackedAt.time)} in Lauf ${coreCrackedAt.run}` : 'Der Kern: NICHT geknackt');

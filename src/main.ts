@@ -237,6 +237,16 @@ game.on((e) => {
       toasts.show((e.started ? '📰 ' : '') + e.text, e.started ? tone : 'info', e.started ? 6000 : 3000);
       break;
     }
+    case 'rivalWarning':
+      toasts.show(
+        `⚔ Rivalen-Angriff in ${CONFIG.rivals.warningSeconds} s! Stärke ${fmt(e.strength)}, deine Abwehr ${fmt(e.defense)}.${e.defense < e.strength ? ' Firewalls ausbauen!' : ''}`,
+        e.defense >= e.strength ? 'warn' : 'bad',
+        8000,
+      );
+      break;
+    case 'rivalAttack':
+      toasts.show(e.text, e.repelled ? 'ok' : 'bad', 8000);
+      break;
     case 'contract':
       toasts.show(e.text, e.success ? 'ok' : 'bad', 5000);
       break;

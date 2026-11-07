@@ -1,7 +1,8 @@
 import { CONFIG } from '../core/config';
 import type { Game } from '../core/game';
 import { fmt, fmtBytes, fmtMoney, fmtPct, fmtTime } from '../core/format';
-import { canHack, defenseRating, estimateHackTime, heatLoad, isCompute, isStorage, marketPrice, powerDemand, targetById, targetUnlocked } from '../core/simulation';
+import { defenseRating, rivalStrength, rivalsActive } from '../core/systems/rivals';
+import { canHack, estimateHackTime, heatLoad, isCompute, isStorage, marketPrice, powerDemand, targetById, targetUnlocked } from '../core/simulation';
 import { getModifiers } from '../core/state';
 import type { NodeInstance } from '../core/types';
 import { NODE_DEFS, PORT_COLORS, PORT_NAMES } from '../nodes/definitions';
@@ -126,6 +127,7 @@ export class Inspector {
       kv.push(['Tarnung', fmtPct(stat(node, 'stealth'))], ['Kette', fmtPct(rt.stealth)]);
     } else if (node.type === 'firewall') {
       kv.push(['Abwehr', fmt(rt.power)], ['Netzwerk gesamt', fmt(defenseRating(s, this.game.runtime))], ['Strom', fmt(powerDemand(node)) + ' W']);
+      if (rivalsActive(s)) kv.push(['Rivalen-Stärke', fmt(s.rival.warning?.strength ?? rivalStrength(s))]);
     } else if (node.type === 'honeypot') {
       kv.push(['Lockwert', fmt(rt.power)], ['Köder', `${fmtBytes(node.buffer)} / ${fmtBytes(rt.bufferCap)}`]);
       kv.push(['Köderverbrauch', fmtBytes(stat(node, 'baitRate')) + '/s'], ['Rückverfolgung', Math.floor(s.rival.track) + ' %']);

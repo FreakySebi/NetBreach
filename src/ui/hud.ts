@@ -1,6 +1,7 @@
 import type { Game } from '../core/game';
 import { fmt, fmtBytes, fmtMoney } from '../core/format';
 import { CONFIG } from '../core/config';
+import { defenseRating } from '../core/systems/rivals';
 import { worldEventById } from '../core/systems/worldEvents';
 import { esc, HtmlView } from './dom';
 import { nextObjective } from './objectives';
@@ -52,6 +53,11 @@ export class Hud {
       const fam = CONFIG.exploits.families.find((f) => f.id === e.family);
       return `<span class="chip ${cfg?.tone ?? 'info'}" title="${esc(cfg?.desc ?? '')}">${esc(cfg?.name ?? e.id)}${fam ? ' · ' + esc(fam.name) : ''} <b>${Math.ceil(e.left)}s</b></span>`;
     });
+    const w = s.rival.warning;
+    if (w) {
+      const def = defenseRating(s, this.game.runtime);
+      chips.unshift(`<span class="chip ${def >= w.strength ? 'warn' : 'bad'}" title="Abwehr gegen Angriffsstärke">⚔ RIVALEN-ANGRIFF ${Math.ceil(w.left)}s · Abwehr ${fmt(def)} / ${fmt(w.strength)}</span>`);
+    } else if (s.rival.located) chips.unshift('<span class="chip ok">⌖ Rivale geortet</span>');
     return chips.length ? chips.join('') : '<span class="chip idle">▣ NEWS</span>';
   }
 

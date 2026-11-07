@@ -3,6 +3,7 @@ import { getModifiers, type Modifiers } from './state';
 import { contractsTick } from './systems/contracts';
 import { marketTick } from './systems/crypto';
 import { consumeExploit, craftTick, exploitReady } from './systems/exploits';
+import { rivalsTick } from './systems/rivals';
 import { worldEventsTick } from './systems/worldEvents';
 import type { Connection, GameEvent, GameState, NodeInstance, NodeRuntime } from './types';
 import { NODE_DEFS } from '../nodes/definitions';
@@ -345,17 +346,6 @@ export function computeRuntime(state: GameState, runtime: RuntimeMap, flows?: Fl
   }
 }
 
-/** Gesamte Abwehrstärke gegen Rivalen-Angriffe. */
-export function defenseRating(state: GameState, runtime: RuntimeMap): number {
-  let d = 0;
-  for (const n of state.nodes) {
-    const rt = runtime.get(n.id);
-    if (!rt) continue;
-    if (n.type === 'firewall') d += rt.power;
-    if (n.type === 'honeypot') d += rt.power * CONFIG.rivals.honeypotDefense;
-  }
-  return d;
-}
 
 /** Geld gutschreiben (zählt für Prestige und Statistik). */
 export function earn(state: GameState, money: number): void {
@@ -655,8 +645,9 @@ export function tick(
     if (node.devices > state.stats.maxDevices) state.stats.maxDevices = node.devices;
   }
 
-  // --- Aufträge ---
+  // --- Aufträge und Rivalen ---
   contractsTick(state, runtime, dt, events, !!opts.offline);
+  rivalsTick(state, runtime, dt, events, !!opts.offline);
 
   // --- Trace: erst prüfen (Hacks können 100 % erreicht haben), dann abbauen ---
   if (state.trace >= 100 && state.raidTimer <= 0) raid(state, events);
