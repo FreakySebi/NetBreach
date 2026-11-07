@@ -3,6 +3,7 @@ import { canAfford } from '../core/economy';
 import type { Game } from '../core/game';
 import { fmt, fmtBytes, fmtMoney, fmtPct, fmtTime } from '../core/format';
 import { lockReason, targetWork } from '../core/simulation';
+import { contractText, rewardText } from '../core/systems/contracts';
 import { priceTrend } from '../core/systems/crypto';
 import { exploitAutoOn } from '../core/systems/exploits';
 import { cryptoChartSvg } from './cryptoChart';
@@ -53,6 +54,7 @@ export class Panel {
       { id: 'shop', label: 'Shop', visible: () => true, render: () => this.shop() },
       { id: 'targets', label: 'Ziele', visible: () => true, render: () => this.targets() },
       { id: 'research', label: 'Forschung', visible: () => true, render: () => this.researchTab() },
+      { id: 'contracts', label: 'Aufträge', visible: () => this.game.state.reputation >= CONFIG.contracts.minRep || this.game.state.contracts.offers.length > 0, render: () => this.contractsTab() },
       { id: 'crypto', label: 'Krypto', visible: () => this.cryptoVisible(), render: () => this.cryptoTab() },
       { id: 'identity', label: 'Identität', visible: () => this.identityVisible(), render: () => this.identity() },
       { id: 'system', label: 'System', visible: () => true, render: () => this.system() },
@@ -118,6 +120,12 @@ export class Panel {
         break;
       case 'buy-crypto':
         this.hooks.buyCrypto(Number(data.f));
+        break;
+      case 'contract-accept':
+        this.game.acceptContract(Number(data.id));
+        break;
+      case 'contract-abandon':
+        this.game.abandonContract(Number(data.id));
         break;
       case 'exploit-auto':
         this.game.toggleExploitAuto(data.id!);
@@ -201,6 +209,26 @@ export class Panel {
     });
     return `<h3>Exploit-Lager</h3><p class="hint">Exploits senken die Security um ${fmtPct(CONFIG.exploits.reduction)} und werden beim Hack-Start verbraucht.</p>
       <div class="exploits">${rows.join('')}</div>`;
+  }
+
+  private contractsTab(): string {
+    const s = this.game.state;
+    const cs = s.contracts;
+    const cards = cs.offers.map((c) => {
+      const ratio = Math.min(1, c.progress / c.goal);
+      const progress =
+        c.kind === 'sellData' ? `${fmtBytes(c.progress)} / ${fmtBytes(c.goal)}` : c.kind === 'earnMoney' ? `${fmtMoney(c.progress)} / ${fmtMoney(c.goal)}` : c.kind === 'lowTrace' ? `${fmtTime(c.progress)} / ${fmtTime(c.goal)}` : `${fmt(c.progress)} / ${fmt(c.goal)}`;
+      return `<div class="card ${c.accepted ? 'active-contract' : ''}" style="--accent:${c.accepted ? '#39ff88' : '#ffd23f'}">
+        <div class="card-head"><span>${c.accepted ? '▶ Aktiv' : '✉ Angebot'}</span><span class="c-dim">${c.accepted ? 'noch' : 'verfällt in'} ${fmtTime(Math.max(0, c.left))}</span></div>
+        <div class="card-desc">${esc(contractText(c))}</div>
+        <div class="kv"><span>Belohnung</span><b class="c-money">${esc(rewardText(c.reward))}</b>${c.accepted ? `<span>Fortschritt</span><b>${progress}</b>` : ''}</div>
+        ${c.accepted ? `<div class="pbar"><div style="width:${(ratio * 100).toFixed(1)}%"></div></div>` : ''}
+        <div class="row">${c.accepted ? `<button class="danger" data-action="contract-abandon" data-id="${c.id}">Abbrechen</button>` : `<button class="primary" data-action="contract-accept" data-id="${c.id}">Annehmen</button><button data-action="contract-abandon" data-id="${c.id}">Ablehnen</button>`}</div>
+      </div>`;
+    });
+    const empty = cs.offers.length < CONFIG.contracts.slots ? `<p class="hint">Neues Angebot in ${fmtTime(Math.max(0, cs.nextIn))}.</p>` : '';
+    return `<h3>Auftrags-Board</h3><p class="hint">Bis zu ${CONFIG.contracts.slots} Aufträge von Auftraggebern im Darknet. Das Zeitlimit startet mit der Annahme.
+      Erfüllt: ${fmt(s.stats.contracts)}</p>${cards.join('')}${empty}`;
   }
 
   private cryptoVisible(): boolean {

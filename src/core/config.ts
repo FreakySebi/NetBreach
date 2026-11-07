@@ -278,7 +278,7 @@ export const CONFIG = {
     repFactor: 1.5,
     hackCount: { min: 3, max: 8, timeSlack: 3, minDuration: 180, maxDuration: 1800 },
     sellData: { hacksWorth: 12, duration: 900 },
-    earnMoney: { hacksWorth: 15, duration: 600, cryptoShare: 0.5 },
+    earnMoney: { hacksWorth: 15, duration: 600, cryptoShare: 0.15 },
     lowTrace: { below: 25, seconds: 300, duration: 600 },
     craft: { count: 2, duration: 1200 },
     defend: { duration: 1500 },

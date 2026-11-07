@@ -23,7 +23,7 @@ export function simulateOffline(state: GameState, runtime: RuntimeMap, seconds: 
   const step = Math.max(1 / CONFIG.tickRate, capped / CONFIG.offline.maxSteps);
   const events: GameEvent[] = [];
   const flows = new Map<number, number>();
-  const opts = CONFIG.offline.allowRaids ? {} : { scriptTraceLimit: CONFIG.offline.scriptTraceLimit };
+  const opts = { offline: true, ...(CONFIG.offline.allowRaids ? {} : { scriptTraceLimit: CONFIG.offline.scriptTraceLimit }) };
   let left = capped;
   while (left > 1e-6) {
     const dt = Math.min(step, left);

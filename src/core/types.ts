@@ -150,6 +150,10 @@ export interface Contract {
   left: number;
   accepted: boolean;
   reward: ContractReward;
+  /** Zählerstand bei Annahme (Fortschritt = aktueller Zähler − Basis). */
+  baseline?: number;
+  /** Razzien bei Annahme (für Aufträge „ohne Razzia“). */
+  raidsAtAccept?: number;
 }
 
 export interface ContractsState {
@@ -263,4 +267,5 @@ export type GameEvent =
   | { kind: 'research'; id: string }
   | { kind: 'achievement'; id: string }
   | { kind: 'exploit'; family: string; count: number }
+  | { kind: 'contract'; id: number; success: boolean; text: string }
   | { kind: 'info'; text: string; tone?: 'ok' | 'warn' | 'bad' };

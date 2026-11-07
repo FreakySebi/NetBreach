@@ -1,5 +1,6 @@
 import { CONFIG, type TargetConfig } from './config';
 import { getModifiers, type Modifiers } from './state';
+import { contractsTick } from './systems/contracts';
 import { marketTick } from './systems/crypto';
 import { consumeExploit, craftTick, exploitReady } from './systems/exploits';
 import type { Connection, GameEvent, GameState, NodeInstance, NodeRuntime } from './types';
@@ -511,6 +512,8 @@ export function marketPrice(state: GameState, market: NodeInstance, mods: Modifi
 export interface TickOptions {
   /** Scripts starten ab diesem Trace keine neuen Hacks. */
   scriptTraceLimit?: number;
+  /** Offline-Nachberechnung: keine Rivalen-Angriffe, keine neuen Ereignisse, Aufträge eingefroren. */
+  offline?: boolean;
 }
 
 export function tick(
@@ -649,6 +652,9 @@ export function tick(
     node.devices = d < 0.5 ? 0 : d;
     if (node.devices > state.stats.maxDevices) state.stats.maxDevices = node.devices;
   }
+
+  // --- Aufträge ---
+  contractsTick(state, runtime, dt, events, !!opts.offline);
 
   // --- Trace: erst prüfen (Hacks können 100 % erreicht haben), dann abbauen ---
   if (state.trace >= 100 && state.raidTimer <= 0) raid(state, events);

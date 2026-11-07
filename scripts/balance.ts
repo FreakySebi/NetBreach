@@ -45,9 +45,11 @@ game.on((e) => {
   if (e.kind === 'phase') log(`  Kern-Phase ${e.phase + 1} erreicht`);
   if (e.kind === 'raid') raidsInRun++;
   if (e.kind === 'exploit') exploitsMade += e.count;
+  if (e.kind === 'contract') contractStats[e.success ? 'ok' : 'fail']++;
 });
 let raidsInRun = 0;
 let exploitsMade = 0;
+const contractStats = { ok: 0, fail: 0 };
 
 // ---------- Hilfen ----------
 
@@ -322,6 +324,7 @@ function playStep(): void {
   }
   chooseTargets();
   tradeCrypto();
+  for (const c of s().contracts.offers) if (!c.accepted) game.acceptContract(c.id);
 }
 
 // ---------- Prestige ----------
@@ -392,6 +395,7 @@ for (const t of CONFIG.targets) {
   const f = (x?: { time: number; run: number }) => (x ? `${fmtTime(x.time).padStart(8)} (L${x.run})` : '       —     ');
   console.log(`  ${t.name.padEnd(24)} ${f(u)}   ${f(h)}`);
 }
-console.log(`\nExploits hergestellt: ${exploitsMade} · Krypto verkauft: ${fmt(s().stats.cryptoSold, 1)} ₿ · Kurs am Ende: ${fmtMoney(s().market.price)}`);
+console.log(`\nAufträge: ${contractStats.ok} erfüllt, ${contractStats.fail} gescheitert`);
+console.log(`Exploits hergestellt: ${exploitsMade} · Krypto verkauft: ${fmt(s().stats.cryptoSold, 1)} ₿ · Kurs am Ende: ${fmtMoney(s().market.price)}`);
 console.log(`Forschung jemals: ${seenResearch.size}/${CONFIG.research.length} · Identitäten: ${s().prestige.identities} · Razzien gesamt: ${s().stats.raids}`);
 console.log(coreCrackedAt ? `Der Kern: geknackt nach ${fmtTime(coreCrackedAt.time)} in Lauf ${coreCrackedAt.run}` : 'Der Kern: NICHT geknackt');

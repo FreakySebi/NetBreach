@@ -1,6 +1,7 @@
 import { CONFIG, type PerkConfig, type ResearchConfig } from './config';
 import { canAfford, pay, refund } from './economy';
 import { simulateOffline, type OfflineReport } from './offline';
+import { abandonContract, acceptContract } from './systems/contracts';
 import { buyCrypto, sellCrypto } from './systems/crypto';
 import { exploitAutoOn, familyById } from './systems/exploits';
 import { clearStorage, deserialize, loadFromStorage, saveToStorage, serialize } from './save';
@@ -164,6 +165,16 @@ export class Game {
     const ok = startHack(this.state, node, this.runtime.get(node.id), events);
     for (const e of events) this.emit(e);
     return ok;
+  }
+
+  // ---------- Aufträge ----------
+
+  acceptContract(id: number): boolean {
+    return acceptContract(this.state, id);
+  }
+
+  abandonContract(id: number): void {
+    abandonContract(this.state, id);
   }
 
   // ---------- Exploits & Krypto ----------

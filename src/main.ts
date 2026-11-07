@@ -231,6 +231,9 @@ game.on((e) => {
       if (a) toasts.show(`🏆 Erfolg: ${a.name}`, 'ok', 6000);
       break;
     }
+    case 'contract':
+      toasts.show(e.text, e.success ? 'ok' : 'bad', 5000);
+      break;
     case 'exploit': {
       const lab = game.state.nodes.find((n) => n.type === 'malware' && n.craft === e.family);
       if (lab) ui.addFloating(lab.x + layoutOf('malware').w / 2, lab.y - 4, `+${e.count} Exploit`, '#ff4fd8');

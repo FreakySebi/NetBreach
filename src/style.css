@@ -611,3 +611,15 @@ button.wide {
   padding: 20px 0;
   text-align: center;
 }
+
+.pbar {
+  height: 6px;
+  background: #0d1a14;
+  border: 1px solid var(--line);
+  margin: 4px 0;
+}
+.pbar div {
+  height: 100%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
