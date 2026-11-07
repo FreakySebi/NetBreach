@@ -1,5 +1,7 @@
 import { CONFIG, type TargetConfig } from './config';
 import { getModifiers, type Modifiers } from './state';
+import { marketTick } from './systems/crypto';
+import { consumeExploit, craftTick, exploitReady } from './systems/exploits';
 import type { Connection, GameEvent, GameState, NodeInstance, NodeRuntime } from './types';
 import { NODE_DEFS } from '../nodes/definitions';
 import { stat } from '../nodes/stats';
@@ -405,7 +407,8 @@ export function addTrace(state: GameState, amount: number, events: GameEvent[]):
 
 /** Trace, den ein Hack dieses Rechners auf dieses Ziel verursacht. */
 export function hackTrace(state: GameState, rt: NodeRuntime | undefined, t: TargetConfig): number {
-  return t.trace * getModifiers(state).traceGain * (1 - (rt?.stealth ?? 0));
+  const exploit = exploitReady(state, t) ? 1 - CONFIG.exploits.traceReduction : 1;
+  return t.trace * getModifiers(state).traceGain * (1 - (rt?.stealth ?? 0)) * exploit;
 }
 
 /**
@@ -426,8 +429,10 @@ export function startHack(
   const trace = hackTrace(state, rt, t);
   // Scripts: nur unter der Pausengrenze starten – und nie selbst eine Razzia auslösen
   if (traceLimit < Infinity && (state.trace >= traceLimit || state.trace + trace >= 100)) return false;
-  const required = t.phases ? t.phases[0].amount : effectiveSecurity(state, t);
-  node.job = { targetId: t.id, progress: 0, required, phase: 0 };
+  let required = t.phases ? t.phases[0].amount : effectiveSecurity(state, t);
+  const exploit = consumeExploit(state, t);
+  if (exploit) required *= 1 - CONFIG.exploits.reduction;
+  node.job = { targetId: t.id, progress: 0, required, phase: 0, exploit };
   addTrace(state, trace, events);
   return true;
 }
@@ -527,6 +532,9 @@ export function tick(
   }
   if (state.blackout > 0) state.blackout = Math.max(0, state.blackout - dt);
   for (const n of state.nodes) if (n.locked) n.locked = n.locked > dt ? n.locked - dt : undefined;
+  // --- Welt: Kryptokurs ---
+  marketTick(state, dt);
+
   computeRuntime(state, runtime, flows);
   const byId = new Map(state.nodes.map((n) => [n.id, n] as const));
   const idx = new ConnIndex(state.connections);
@@ -617,6 +625,13 @@ export function tick(
     state.crypto += perSec * dt;
     state.run.crypto += perSec * dt;
     rt.rate = perSec;
+  }
+
+  // --- Malware-Labor stellt Exploits her ---
+  for (const node of state.nodes) {
+    if (node.type !== 'malware') continue;
+    const made = craftTick(state, node, runtime.get(node.id)!, dt);
+    if (made) events.push({ kind: 'exploit', family: node.craft!, count: made });
   }
 
   // --- Honeypots: verbrauchen Köder-Daten und bringen nebenbei Ruf ---

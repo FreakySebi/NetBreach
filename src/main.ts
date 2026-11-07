@@ -141,6 +141,14 @@ const panel = new Panel($('sidepanel'), game, {
       ],
     );
   },
+  sellCrypto(fraction) {
+    const euros = game.sellCrypto(fraction);
+    if (euros > 0) toasts.show(`Krypto verkauft: +${fmtMoney(euros)}`, 'ok', 2500);
+  },
+  buyCrypto(fraction) {
+    const coins = game.buyCrypto(fraction);
+    if (coins > 0) toasts.show(`Krypto gekauft: +${fmt(coins, 4)} ₿`, 'ok', 2500);
+  },
   buyPerk(id) {
     game.buyPerk(id);
   },
@@ -221,6 +229,11 @@ game.on((e) => {
     case 'achievement': {
       const a = CONFIG.achievements.find((x) => x.id === e.id);
       if (a) toasts.show(`🏆 Erfolg: ${a.name}`, 'ok', 6000);
+      break;
+    }
+    case 'exploit': {
+      const lab = game.state.nodes.find((n) => n.type === 'malware' && n.craft === e.family);
+      if (lab) ui.addFloating(lab.x + layoutOf('malware').w / 2, lab.y - 4, `+${e.count} Exploit`, '#ff4fd8');
       break;
     }
     case 'raid':

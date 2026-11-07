@@ -9,6 +9,7 @@ import { fmt, fmtMoney, fmtTime } from '../src/core/format';
 import { Game } from '../src/core/game';
 import { canHack, estimateHackTime, hackTrace, isCompute, isStorage, marketPrice, powerDemand, targetUnlocked } from '../src/core/simulation';
 import { getModifiers } from '../src/core/state';
+import { familyById } from '../src/core/systems/exploits';
 import type { Cost, NodeInstance, NodeTypeId } from '../src/core/types';
 import { nodeConfig, nodePrice, stat, upgradeCost, upgradeMaxed } from '../src/nodes/stats';
 
@@ -43,8 +44,10 @@ game.on((e) => {
   }
   if (e.kind === 'phase') log(`  Kern-Phase ${e.phase + 1} erreicht`);
   if (e.kind === 'raid') raidsInRun++;
+  if (e.kind === 'exploit') exploitsMade += e.count;
 });
 let raidsInRun = 0;
+let exploitsMade = 0;
 
 // ---------- Hilfen ----------
 
@@ -146,6 +149,17 @@ function infrastructure(): void {
     if (store && !conns(hp, 'dataIn', 'in').length) game.connect(store.id, 'dataOut', hp.id, 'dataIn');
     upg(hp, 'lure', 0.05);
   }
+  // Malware-Labor: Daten aus einem Speicher, GPU, stellt Exploits für das Hauptziel her
+  if (game.isUnlocked('malware') && nodes('malware').length < 2) buy('malware');
+  const mainTarget = CONFIG.targets.find((t) => t.id === [...cs].sort((a, b) => rt(b).power - rt(a).power).find((c) => c.targetId !== 'kern')?.targetId);
+  for (const lab of nodes('malware')) {
+    const store = nodes().filter(isStorage).sort((a, b) => b.buffer - a.buffer)[0];
+    if (store && !conns(lab, 'dataIn', 'in').length) game.connect(store.id, 'dataOut', lab.id, 'dataIn');
+    if (game.isUnlocked('gpu')) ensureSupply(lab, 'accelIn', 'gpu', 'accelOut', (p) => conns(p, 'accelOut', 'out').length === 0);
+    if (mainTarget && familyById(mainTarget.family)) game.setCraft(lab.id, mainTarget.family);
+    upg(lab, 'ops', 0.2);
+    if (rt(lab).flags.has('noBait')) upg(lab, 'cap', 0.2);
+  }
   // Botnetz: an den stärksten Rechner, ein Laptop farmt Smart-Homes
   if (game.isUnlocked('botnet') && nodes('botnet').length < 2) buy('botnet');
   const strongest = [...cs].sort((a, b) => rt(b).power - rt(a).power)[0];
@@ -223,11 +237,20 @@ function chooseTargets(): void {
       if (t.reqRep >= 1500 || t.phases || t.rival) log(`Ziel freigeschaltet: ${t.name}`);
     }
   }
+  // Erkunden: jedes freigeschaltete, noch nie gehackte Ziel einmal angreifen
+  const explorers = new Map<number, TargetConfig>();
+  for (const t of CONFIG.targets) {
+    if (t.phases || firstHack.has(t.id) || !targetUnlocked(st, t)) continue;
+    const c = cs.find((x) => x !== coreNode && !explorers.has(x.id) && canHack(st, x, t));
+    if (c) explorers.set(c.id, t);
+  }
   for (const c of cs) {
-    let best: TargetConfig | undefined;
+    let best: TargetConfig | undefined = explorers.get(c.id);
     let bestVal = 0;
     // Kern: der stärkste Rechner versucht es, sobald er offen ist
-    if (coreTarget && c === coreNode && canHack(st, c, coreTarget)) best = coreTarget;
+    if (best) {
+      /* Erkundung */
+    } else if (coreTarget && c === coreNode && canHack(st, c, coreTarget)) best = coreTarget;
     // Botnetz-Farm: der erste Laptop hackt Smart-Homes
     else if (c.type === 'laptop' && c === nodes('laptop')[0] && nodes('botnet').length && cs.length > 2 && st.trace < 50) best = CONFIG.targets.find((t) => t.id === 'smarthome');
     else {
@@ -259,16 +282,29 @@ function income(): number {
   return b.t > a.t ? Math.max(0, (b.v - a.v) / (b.t - a.t)) : 0;
 }
 
-/** Spart auf Forschung, die mit ~15 Minuten Einkommen bezahlbar ist. */
+/** Spart auf große Käufe (teure Forschung, Quanten-Rechner), die mit ~1 h Einkommen bezahlbar sind. */
 function savingForResearch(): boolean {
   const inc = income();
   const st = s();
-  return CONFIG.research.some((r) => {
-    if (game.researchState(r) !== 'available') return false;
-    if ((r.cost.models ?? 0) > st.models || (r.cost.crypto ?? 0) > st.crypto) return false;
-    const m = r.cost.money ?? 0;
-    return m >= 1e8 && m > st.money && m <= inc * 900;
+  const big: Cost[] = CONFIG.research.filter((r) => game.researchState(r) === 'available').map((r) => r.cost);
+  if (game.isUnlocked('quantum') && nodes('quantum').length < 3) big.push(nodePrice(st, 'quantum'));
+  return big.some((c) => {
+    if ((c.models ?? 0) > st.models || (c.crypto ?? 0) > st.crypto) return false;
+    const m = c.money ?? 0;
+    return m >= 1e8 && m > st.money && m <= inc * 3600;
   });
+}
+
+/** Krypto über Bedarf verkaufen, wenn der Kurs deutlich über dem Mittel liegt. */
+function tradeCrypto(): void {
+  const st = s();
+  const need = Math.max(
+    0,
+    ...CONFIG.research.filter((r) => !st.research.includes(r.id)).map((r) => r.cost.crypto ?? 0),
+    ...(['server', 'quantum', 'datacenter'] as NodeTypeId[]).filter((t) => game.isUnlocked(t)).map((t) => (nodePrice(st, t).crypto ?? 0) * 2),
+  );
+  const excess = st.crypto - need * 1.2;
+  if (excess > 0 && st.market.price > CONFIG.cryptoMarket.basePrice * 1.15) game.sellCrypto((excess * 0.5) / st.crypto);
 }
 
 function playStep(): void {
@@ -285,6 +321,7 @@ function playStep(): void {
     growth();
   }
   chooseTargets();
+  tradeCrypto();
 }
 
 // ---------- Prestige ----------
@@ -355,5 +392,6 @@ for (const t of CONFIG.targets) {
   const f = (x?: { time: number; run: number }) => (x ? `${fmtTime(x.time).padStart(8)} (L${x.run})` : '       —     ');
   console.log(`  ${t.name.padEnd(24)} ${f(u)}   ${f(h)}`);
 }
-console.log(`\nForschung jemals: ${seenResearch.size}/${CONFIG.research.length} · Identitäten: ${s().prestige.identities} · Razzien gesamt: ${s().stats.raids}`);
+console.log(`\nExploits hergestellt: ${exploitsMade} · Krypto verkauft: ${fmt(s().stats.cryptoSold, 1)} ₿ · Kurs am Ende: ${fmtMoney(s().market.price)}`);
+console.log(`Forschung jemals: ${seenResearch.size}/${CONFIG.research.length} · Identitäten: ${s().prestige.identities} · Razzien gesamt: ${s().stats.raids}`);
 console.log(coreCrackedAt ? `Der Kern: geknackt nach ${fmtTime(coreCrackedAt.time)} in Lauf ${coreCrackedAt.run}` : 'Der Kern: NICHT geknackt');

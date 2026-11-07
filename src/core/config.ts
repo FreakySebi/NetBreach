@@ -242,6 +242,8 @@ export const CONFIG = {
   exploits: {
     /** Security-Reduktion durch einen Exploit (0.6 = −60 %). */
     reduction: 0.6,
+    /** Ein Exploit ist ein leiser Einbruch: Trace des Hacks −50 %. */
+    traceReduction: 0.5,
     /** GPU-OPS zählen im Labor so viel. */
     gpuFactor: 4,
     families: [

@@ -3,6 +3,9 @@ import { canAfford } from '../core/economy';
 import type { Game } from '../core/game';
 import { fmt, fmtBytes, fmtMoney, fmtPct, fmtTime } from '../core/format';
 import { lockReason, targetWork } from '../core/simulation';
+import { priceTrend } from '../core/systems/crypto';
+import { exploitAutoOn } from '../core/systems/exploits';
+import { cryptoChartSvg } from './cryptoChart';
 import type { NodeTypeId } from '../core/types';
 import { NODE_DEFS, CATEGORY_COLORS } from '../nodes/definitions';
 import { nodeConfig, nodePrice } from '../nodes/stats';
@@ -21,6 +24,8 @@ export interface PanelHooks {
   buyPerk(id: string): void;
   exportSave(): void;
   importSave(): void;
+  sellCrypto(fraction: number): void;
+  buyCrypto(fraction: number): void;
 }
 
 interface Tab {
@@ -48,6 +53,7 @@ export class Panel {
       { id: 'shop', label: 'Shop', visible: () => true, render: () => this.shop() },
       { id: 'targets', label: 'Ziele', visible: () => true, render: () => this.targets() },
       { id: 'research', label: 'Forschung', visible: () => true, render: () => this.researchTab() },
+      { id: 'crypto', label: 'Krypto', visible: () => this.cryptoVisible(), render: () => this.cryptoTab() },
       { id: 'identity', label: 'Identität', visible: () => this.identityVisible(), render: () => this.identity() },
       { id: 'system', label: 'System', visible: () => true, render: () => this.system() },
     ];
@@ -106,6 +112,15 @@ export class Panel {
         break;
       case 'import':
         this.hooks.importSave();
+        break;
+      case 'sell':
+        this.hooks.sellCrypto(Number(data.f));
+        break;
+      case 'buy-crypto':
+        this.hooks.buyCrypto(Number(data.f));
+        break;
+      case 'exploit-auto':
+        this.game.toggleExploitAuto(data.id!);
         break;
     }
     this.update();
@@ -172,7 +187,46 @@ export class Panel {
         </div>
       </div>`;
     });
-    return `<h3>Hack-Ziele</h3><p class="hint">Hack-Dauer = Security ÷ Rechenleistung. Rechner brauchen genug RAM.</p>${rows.join('')}`;
+    return `${this.exploitInventory()}<h3>Hack-Ziele</h3><p class="hint">Hack-Dauer = Security ÷ Rechenleistung. Rechner brauchen genug RAM.</p>${rows.join('')}`;
+  }
+
+  private exploitInventory(): string {
+    const s = this.game.state;
+    const any = CONFIG.exploits.families.some((f) => (s.exploits[f.id] ?? 0) > 0) || s.research.includes('malware');
+    if (!any) return '';
+    const rows = CONFIG.exploits.families.map((f) => {
+      const on = exploitAutoOn(s, f.id);
+      return `<div class="exploit-row"><span>${esc(f.name)}</span><b>${fmt(s.exploits[f.id] ?? 0)}</b>
+        <button data-action="exploit-auto" data-id="${f.id}" class="${on ? 'primary' : ''}" title="Beim Hack-Start automatisch verbrauchen">${on ? 'AUTO' : 'AUS'}</button></div>`;
+    });
+    return `<h3>Exploit-Lager</h3><p class="hint">Exploits senken die Security um ${fmtPct(CONFIG.exploits.reduction)} und werden beim Hack-Start verbraucht.</p>
+      <div class="exploits">${rows.join('')}</div>`;
+  }
+
+  private cryptoVisible(): boolean {
+    const s = this.game.state;
+    return s.crypto > 0 || s.run.crypto > 0 || s.stats.cryptoSold > 0;
+  }
+
+  private cryptoTab(): string {
+    const s = this.game.state;
+    const trend = priceTrend(s);
+    const value = s.crypto * s.market.price;
+    const fee = CONFIG.cryptoMarket.fee;
+    return `<h3>Krypto-Börse</h3>
+      <div class="price-head"><b class="c-crypto">${fmtMoney(s.market.price)}</b><span class="${trend >= 0 ? 'c-money' : 'c-bad'}">${trend >= 0 ? '▲' : '▼'} ${fmtPct(Math.abs(trend))}</span></div>
+      <p class="hint">Kurs pro ₿ · Verlauf der letzten ${fmtTime(s.market.history.length * CONFIG.cryptoMarket.sampleSeconds)}</p>
+      ${cryptoChartSvg(s.market.history, s.market.price)}
+      <div class="kv"><span>Bestand</span><b class="c-crypto">${fmt(s.crypto, 3)} ₿</b><span>Wert</span><b>${fmtMoney(value)}</b>
+      <span>Gebühr</span><b>${fmtPct(fee)}</b><span>Verkauft (gesamt)</span><b>${fmt(s.stats.cryptoSold, 2)} ₿</b></div>
+      <h4>Verkaufen</h4>
+      <div class="row"><button data-action="sell" data-f="0.1" ${s.crypto > 0 ? '' : 'disabled'}>10 %</button>
+        <button data-action="sell" data-f="0.5" ${s.crypto > 0 ? '' : 'disabled'}>50 %</button>
+        <button data-action="sell" data-f="1" ${s.crypto > 0 ? '' : 'disabled'}>Alles</button></div>
+      <h4>Kaufen</h4>
+      <div class="row"><button data-action="buy-crypto" data-f="0.1" ${s.money > 0 ? '' : 'disabled'}>10 % Geld</button>
+        <button data-action="buy-crypto" data-f="0.5" ${s.money > 0 ? '' : 'disabled'}>50 % Geld</button></div>
+      <p class="hint">Krypto bezahlt späte Hardware und Forschung. Der Kurs schwankt und kehrt langfristig zum Mittel zurück – günstig kaufen, teuer verkaufen.</p>`;
   }
 
   private researchTab(): string {

@@ -29,6 +29,7 @@ export class Inspector {
       if (id === null) return;
       if (action === 'upgrade') this.game.upgrade(id, data.id!);
       if (action === 'target') this.game.setTarget(id, data.id!);
+      if (action === 'craft') this.game.setCraft(id, data.id!);
       if (action === 'hack') this.hooks.hack(id);
       if (action === 'sell') this.hooks.sell(id);
       if (action === 'close') this.ui.selectedNode = null;
@@ -82,6 +83,7 @@ export class Inspector {
     }
 
     if (isCompute(node)) parts.push(this.targetBlock(node));
+    if (node.type === 'malware') parts.push(this.craftBlock(node));
     if (node.type !== 'job') {
       parts.push(`<div class="row"><button class="danger" data-action="sell">Verkaufen (${Math.round(CONFIG.sellRefund * 100)} %)</button></div>`);
     }
@@ -140,6 +142,25 @@ export class Inspector {
     }
     if (!kv.length) return '';
     return `<div class="kv">${kv.map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join('')}</div>`;
+  }
+
+  private craftBlock(node: NodeInstance): string {
+    const s = this.game.state;
+    const rt = this.game.runtime.get(node.id)!;
+    const list = CONFIG.exploits.families.map((f) => {
+      const active = node.craft === f.id;
+      const time = rt.power > 0 ? fmtTime(f.ops / rt.power) : '∞';
+      return `<button class="target ${active ? 'active' : ''}" data-action="craft" data-id="${f.id}">
+        <span>${esc(f.name)} <small>×${fmt(s.exploits[f.id] ?? 0)}</small></span><small>${fmtBytes(f.data)} · ${time}</small></button>`;
+    });
+    const fam = CONFIG.exploits.families.find((f) => f.id === node.craft);
+    const hint = !fam
+      ? 'Wähle eine Exploit-Familie.'
+      : node.buffer < fam.data
+        ? `Wartet auf Daten: ${fmtBytes(node.buffer)} / ${fmtBytes(fam.data)} – Daten-Kabel anschließen.`
+        : `Fortschritt ${fmtPct((node.craftProgress ?? 0) / fam.ops)}`;
+    return `<h4>Exploit herstellen</h4><p class="hint">Ein Exploit senkt die Security eines Ziels seiner Familie um
+      ${fmtPct(CONFIG.exploits.reduction)} und wird beim Hack-Start verbraucht. ${esc(hint)}</p><div class="targets">${list.join('')}</div>`;
   }
 
   private targetBlock(node: NodeInstance): string {

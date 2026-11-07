@@ -262,4 +262,5 @@ export type GameEvent =
   | { kind: 'traceWarning' }
   | { kind: 'research'; id: string }
   | { kind: 'achievement'; id: string }
+  | { kind: 'exploit'; family: string; count: number }
   | { kind: 'info'; text: string; tone?: 'ok' | 'warn' | 'bad' };

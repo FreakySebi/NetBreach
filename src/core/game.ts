@@ -1,6 +1,8 @@
 import { CONFIG, type PerkConfig, type ResearchConfig } from './config';
 import { canAfford, pay, refund } from './economy';
 import { simulateOffline, type OfflineReport } from './offline';
+import { buyCrypto, sellCrypto } from './systems/crypto';
+import { exploitAutoOn, familyById } from './systems/exploits';
 import { clearStorage, deserialize, loadFromStorage, saveToStorage, serialize } from './save';
 import { createInitialState, getModifiers, pendingTokens, perkLevel, prestigeReset } from './state';
 import { canHack, computeRuntime, earn, isCompute, startHack, targetById, tick, type FlowMap, type RuntimeMap } from './simulation';
@@ -162,6 +164,29 @@ export class Game {
     const ok = startHack(this.state, node, this.runtime.get(node.id), events);
     for (const e of events) this.emit(e);
     return ok;
+  }
+
+  // ---------- Exploits & Krypto ----------
+
+  setCraft(nodeId: number, family: string): void {
+    const node = this.node(nodeId);
+    if (!node || node.type !== 'malware' || !familyById(family)) return;
+    if (node.craft !== family) node.craftProgress = 0;
+    node.craft = family;
+  }
+
+  toggleExploitAuto(family: string): void {
+    this.state.exploitAuto[family] = !exploitAutoOn(this.state, family);
+  }
+
+  /** Verkauft einen Anteil des Krypto-Bestands. */
+  sellCrypto(fraction: number): number {
+    return sellCrypto(this.state, this.state.crypto * fraction);
+  }
+
+  /** Kauft Krypto für einen Anteil des Geldes. */
+  buyCrypto(fraction: number): number {
+    return buyCrypto(this.state, this.state.money * fraction);
   }
 
   /** Maximale Kabelanzahl an einem Port. */
