@@ -1,7 +1,7 @@
 import { CONFIG } from '../core/config';
 import type { Game } from '../core/game';
 import { fmt, fmtBytes, fmtMoney, fmtPct, fmtTime } from '../core/format';
-import { canHack, estimateHackTime, heatLoad, isCompute, isStorage, marketPrice, powerDemand, targetById, targetUnlocked } from '../core/simulation';
+import { canHack, defenseRating, estimateHackTime, heatLoad, isCompute, isStorage, marketPrice, powerDemand, targetById, targetUnlocked } from '../core/simulation';
 import { getModifiers } from '../core/state';
 import type { NodeInstance } from '../core/types';
 import { NODE_DEFS, PORT_COLORS, PORT_NAMES } from '../nodes/definitions';
@@ -97,6 +97,7 @@ export class Inspector {
       kv.push(['Kerne', fmt(stat(node, 'cores'))], ['Takt', fmt(stat(node, 'clock')) + ' GHz'], ['RAM', fmt(stat(node, 'ram')) + ' GB']);
       kv.push(['Leistung', fmt(rt.power) + ' OPS']);
       if (rt.gpuBonus > 0) kv.push(['GPU-Boost', fmt(rt.gpuBonus) + ' OPS (zielabhängig)']);
+      if (rt.botOps > 0) kv.push(['Botnetz', '+' + fmt(rt.botOps) + ' OPS']);
       if (rt.boost > 0) kv.push(['Script-Bonus', '+' + fmtPct(rt.boost)]);
       kv.push(['Temperatur', `${Math.round(rt.temperature)} °C${rt.thermalRatio < 1 ? ' (gedrosselt ' + fmtPct(rt.thermalRatio) + ')' : ''}`]);
       if (powerDemand(node) > 0) kv.push(['Strom', `${fmt(powerDemand(node))} W · ${fmtPct(rt.powerRatio)}`]);
@@ -121,6 +122,19 @@ export class Inspector {
       kv.push(['Krypto', fmt(rt.rate * 3600, 3) + ' ₿/h'], ['Strom', fmt(powerDemand(node)) + ' W']);
     } else if (node.type === 'vpn' || node.type === 'proxy') {
       kv.push(['Tarnung', fmtPct(stat(node, 'stealth'))], ['Kette', fmtPct(rt.stealth)]);
+    } else if (node.type === 'firewall') {
+      kv.push(['Abwehr', fmt(rt.power)], ['Netzwerk gesamt', fmt(defenseRating(s, this.game.runtime))], ['Strom', fmt(powerDemand(node)) + ' W']);
+    } else if (node.type === 'honeypot') {
+      kv.push(['Lockwert', fmt(rt.power)], ['Köder', `${fmtBytes(node.buffer)} / ${fmtBytes(rt.bufferCap)}`]);
+      kv.push(['Köderverbrauch', fmtBytes(stat(node, 'baitRate')) + '/s'], ['Rückverfolgung', Math.floor(s.rival.track) + ' %']);
+      kv.push(['Abwehr-Beitrag', fmt(rt.power * CONFIG.rivals.honeypotDefense)]);
+    } else if (node.type === 'botnet') {
+      kv.push(['Geräte', `${fmt(node.devices ?? 0, 0)} / ${fmt(stat(node, 'capacity'), 0)}`], ['OPS', fmt(rt.power)]);
+      kv.push(['OPS pro Gerät', fmt(stat(node, 'opsPerDevice'), 3)], ['Ausbreitung', '×' + fmt(stat(node, 'spread'))]);
+      kv.push(['Verlust', fmtPct(stat(node, 'decay') * 60) + ' / min'], ['Verbindungen', `${rt.load} / ${Math.floor(stat(node, 'slots'))}`]);
+    } else if (node.type === 'malware') {
+      kv.push(['Entwicklung', fmt(rt.power) + ' OPS'], ['Daten', `${fmtBytes(node.buffer)} / ${fmtBytes(rt.bufferCap)}`]);
+      if (rt.gpuBonus > 0) kv.push(['GPU-Anteil', fmt(rt.gpuBonus * CONFIG.exploits.gpuFactor) + ' OPS']);
     } else if (node.type === 'script') {
       kv.push(['Verbindungen', `${rt.load} / ${Math.floor(stat(node, 'slots'))}`], ['Speed-Bonus', '+' + fmtPct(stat(node, 'boost'))]);
     }

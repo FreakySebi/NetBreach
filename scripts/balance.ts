@@ -137,6 +137,15 @@ function infrastructure(): void {
       if (market && !conns(n, 'dataOut', 'out').length) game.connect(n.id, 'dataOut', market.id, 'dataIn');
     }
   }
+  // Sicherheit: Firewall ab mittlerem Spielfortschritt, Honeypot mit Köder-Daten aus einem Speicher
+  if (game.isUnlocked('firewall') && !nodes('firewall').length) buy('firewall');
+  for (const fw of nodes('firewall')) upg(fw, 'def', 0.1);
+  if (game.isUnlocked('honeypot') && !nodes('honeypot').length) buy('honeypot');
+  for (const hp of nodes('honeypot')) {
+    const store = nodes().find(isStorage);
+    if (store && !conns(hp, 'dataIn', 'in').length) game.connect(store.id, 'dataOut', hp.id, 'dataIn');
+    upg(hp, 'lure', 0.05);
+  }
   // Botnetz: an den stärksten Rechner, ein Laptop farmt Smart-Homes
   if (game.isUnlocked('botnet') && nodes('botnet').length < 2) buy('botnet');
   const strongest = [...cs].sort((a, b) => rt(b).power - rt(a).power)[0];

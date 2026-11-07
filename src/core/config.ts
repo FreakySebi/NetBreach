@@ -327,6 +327,8 @@ export const CONFIG = {
     /** Reputation für eine erfolgreiche Abwehr = repelRep × Stärke / base */
     repelRep: 40,
     honeypotRep: 25,
+    /** Passiver Ruf pro Lockwert und Sekunde, solange ein Honeypot Köder hat. */
+    honeypotPassiveRep: 0.05,
     /** Rückverfolgung pro Lockwert und Angriff in %. */
     trackPerLure: 12,
     /** Security des Rivalen-Ziels wächst pro besiegtem Rivalen. */

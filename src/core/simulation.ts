@@ -619,9 +619,12 @@ export function tick(
     rt.rate = perSec;
   }
 
-  // --- Honeypots verbrauchen Köder-Daten ---
+  // --- Honeypots: verbrauchen Köder-Daten und bringen nebenbei Ruf ---
   for (const node of state.nodes) {
-    if (node.type === 'honeypot') node.buffer = Math.max(0, node.buffer - stat(node, 'baitRate') * dt);
+    if (node.type !== 'honeypot') continue;
+    const lure = runtime.get(node.id)!.power;
+    state.reputation += lure * CONFIG.rivals.honeypotPassiveRep * mods.rep * dt;
+    node.buffer = Math.max(0, node.buffer - stat(node, 'baitRate') * dt);
   }
 
   // --- Botnetze verlieren laufend Geräte ---
